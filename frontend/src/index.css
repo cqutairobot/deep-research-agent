@@ -1,0 +1,304 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🌌 深空暗夜 (Deep Space Dark) */
+:root, [data-theme="dark"] {
+  --bg-base: #080c14;
+  --bg-surface: rgba(15, 23, 42, 0.85);
+  --bg-card: rgba(30, 41, 59, 0.7);
+  --bg-nested: rgba(15, 23, 42, 0.6);
+  --bg-input: rgba(10, 15, 29, 0.8);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(59, 130, 246, 0.4);
+  --accent-primary: #3b82f6;
+  --accent-secondary: #6366f1;
+  --badge-bg: rgba(59, 130, 246, 0.15);
+  --badge-text: #60a5fa;
+  --badge-border: rgba(59, 130, 246, 0.3);
+  --glow-1: rgba(59, 130, 246, 0.12);
+  --glow-2: rgba(99, 102, 241, 0.12);
+}
+
+/* 📜 古色古香 · 宣纸朱砂 (Vintage Antique Parchment & Chinese Ink) */
+[data-theme="vintage"] {
+  --bg-base: #f4ecd8;
+  --bg-surface: rgba(250, 244, 230, 0.95);
+  --bg-card: rgba(240, 230, 206, 0.88);
+  --bg-nested: rgba(232, 220, 192, 0.75);
+  --bg-input: #fdfaf2;
+  --text-primary: #2a1d0f;
+  --text-secondary: #554028;
+  --text-muted: #886d4e;
+  --border-subtle: rgba(130, 95, 55, 0.22);
+  --border-hover: rgba(185, 28, 28, 0.5);
+  --accent-primary: #b91c1c; /* 朱砂红 */
+  --accent-secondary: #991b1b;
+  --badge-bg: rgba(185, 28, 28, 0.12);
+  --badge-text: #b91c1c;
+  --badge-border: rgba(185, 28, 28, 0.3);
+  --glow-1: rgba(185, 28, 28, 0.06);
+  --glow-2: rgba(180, 83, 9, 0.06);
+}
+
+/* ☀️ 极简纯净 · 雅白清爽 (Crisp Light / Clean Editorial) */
+[data-theme="light"] {
+  --bg-base: #f8fafc;
+  --bg-surface: rgba(255, 255, 255, 0.98);
+  --bg-card: rgba(248, 250, 252, 0.9);
+  --bg-nested: rgba(241, 245, 249, 0.85);
+  --bg-input: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-subtle: rgba(15, 23, 42, 0.1);
+  --border-hover: rgba(37, 99, 235, 0.45);
+  --accent-primary: #2563eb;
+  --accent-secondary: #4f46e5;
+  --badge-bg: rgba(37, 99, 235, 0.1);
+  --badge-text: #2563eb;
+  --badge-border: rgba(37, 99, 235, 0.25);
+  --glow-1: rgba(37, 99, 235, 0.06);
+  --glow-2: rgba(79, 70, 229, 0.06);
+}
+
+/* 🌲 翡翠极光 · 苍翠松林 (Nordic Emerald / Aurora Forest) */
+[data-theme="emerald"] {
+  --bg-base: #061712;
+  --bg-surface: rgba(10, 32, 25, 0.9);
+  --bg-card: rgba(16, 48, 38, 0.78);
+  --bg-nested: rgba(8, 24, 18, 0.72);
+  --bg-input: rgba(6, 20, 15, 0.9);
+  --text-primary: #ecfdf5;
+  --text-secondary: #a7f3d0;
+  --text-muted: #6ee7b7;
+  --border-subtle: rgba(52, 211, 153, 0.18);
+  --border-hover: rgba(16, 185, 129, 0.5);
+  --accent-primary: #059669;
+  --accent-secondary: #0d9488;
+  --badge-bg: rgba(16, 185, 129, 0.15);
+  --badge-text: #34d399;
+  --badge-border: rgba(16, 185, 129, 0.35);
+  --glow-1: rgba(16, 185, 129, 0.12);
+  --glow-2: rgba(13, 148, 136, 0.12);
+}
+
+html, body {
+  background-color: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+  min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* 统一多主题材质 */
+.theme-surface {
+  background: var(--bg-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.theme-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.theme-card:hover {
+  border-color: var(--border-hover);
+}
+
+.theme-nested {
+  background: var(--bg-nested);
+  border: 1px solid var(--border-subtle);
+}
+
+.theme-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.theme-input:focus {
+  border-color: var(--accent-primary);
+}
+
+/* 主题主按钮与强调 */
+.theme-btn-primary {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 14px 0 var(--badge-border);
+}
+
+.theme-btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.theme-pill-active {
+  background-color: var(--accent-primary) !important;
+  color: #ffffff !important;
+}
+
+.theme-accent-text {
+  color: var(--accent-primary) !important;
+}
+
+.theme-accent-bg {
+  background-color: var(--accent-primary) !important;
+}
+
+.theme-badge {
+  background-color: var(--badge-bg) !important;
+  color: var(--badge-text) !important;
+  border: 1px solid var(--badge-border) !important;
+}
+
+/* 引用角标 */
+.citation-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  background-color: var(--badge-bg);
+  color: var(--badge-text);
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0 0.2rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: 1px solid var(--badge-border);
+}
+
+.citation-badge:hover {
+  background-color: var(--accent-primary);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px var(--badge-border);
+}
+
+/* 研报 Markdown 排版增强 */
+.prose-custom h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0.5rem;
+}
+
+.prose-custom h2 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-custom h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-custom p {
+  color: var(--text-secondary);
+  line-height: 1.85;
+  margin-bottom: 1rem;
+}
+
+.prose-custom table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25rem 0;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.prose-custom th {
+  background: var(--bg-nested);
+  color: var(--text-primary);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  font-weight: 600;
+}
+
+.prose-custom td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.prose-custom tr:hover {
+  background: var(--badge-bg);
+}
+
+.prose-custom ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+}
+
+.prose-custom li {
+  margin-bottom: 0.4rem;
+  line-height: 1.75;
+}
+
+.prose-custom blockquote {
+  border-left: 3px solid var(--accent-primary);
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: var(--text-secondary);
+  font-style: italic;
+  background: var(--badge-bg);
+  padding: 0.75rem 1rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+/* 打印与 PDF 导出优化样式 */
+@media print {
+  header, nav, .sticky, button, .theme-btn-primary, [role="dialog"], .fixed {
+    display: none !important;
+  }
+  body, html {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+  .prose-custom {
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .lg\:col-span-3 {
+    width: 100% !important;
+  }
+}
+
+/* 细致滚动条 */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
