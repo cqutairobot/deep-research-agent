@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { X, Network, ChevronRight, ChevronDown, Sparkles, Layers, BookOpen, FileText, Download } from 'lucide-react';
 import { ChapterOutline } from '../types';
 import { Language, translations } from '../locales/translations';
+import { downloadBlob } from '../lib/utils';
 
 interface MindmapModalProps {
   isOpen: boolean;
@@ -112,12 +113,8 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
 
   const handleExportJson = () => {
     const blob = new Blob([JSON.stringify(rootNode, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${(topic || '深度调研思维导图').replace(/[^\w\u4e00-\u9fa5]+/g, '_')}_mindmap.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const cleanTopic = (topic || '深度调研思维导图').replace(/[^\w\u4e00-\u9fa5]+/g, '_');
+    downloadBlob(blob, `${cleanTopic}_mindmap.json`);
   };
 
   const renderNode = (node: MindNode) => {
@@ -131,6 +128,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
             <button
               type="button"
               onClick={() => toggleCollapse(node.id)}
+              aria-label={isCollapsed ? `Expand ${node.title}` : `Collapse ${node.title}`}
               className="w-4 h-4 rounded theme-nested flex items-center justify-center opacity-70 hover:opacity-100 cursor-pointer"
             >
               {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -176,7 +174,12 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="mindmap-modal-title"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+    >
       <div className="theme-surface rounded-3xl w-full max-w-4xl h-[85vh] p-6 shadow-2xl flex flex-col space-y-4">
         
         {/* 头部 */}
@@ -186,7 +189,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
               <Network className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold">{t.title}</h3>
+              <h3 id="mindmap-modal-title" className="text-base font-bold">{t.title}</h3>
               <p className="text-xs opacity-70">{t.subtitle}</p>
             </div>
           </div>
@@ -202,6 +205,7 @@ export const MindmapModal: React.FC<MindmapModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close mindmap modal"
               className="opacity-70 hover:opacity-100 p-1.5 rounded-lg theme-nested transition cursor-pointer"
             >
               <X className="w-4 h-4" />

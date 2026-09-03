@@ -18,6 +18,7 @@ class ChapterOutline(TypedDict):
     focus: str                  # 调研侧重点
     search_queries: List[str]   # 针对本章规划的检索词
     extracted_facts: List[str]  # 本章搜集到的核心事实要点 (经 Map-Reduce 压缩)
+    bound_documents: Optional[List[str]] # 针对本章指定绑定的专属私有文档文件名列表
 
 class ResearchState(TypedDict):
     """LangGraph 状态机核心状态 Schema (Phase 5 升级版)"""
@@ -40,6 +41,7 @@ class ResearchState(TypedDict):
     needs_more_research: bool                 # 是否需要触发下一轮深搜
     
     # 报告与校验产物
-    draft_report: str                         # 初稿报告全文
+    chapter_drafts: Optional[Dict[int, str]]  # 各章节独立深度稿件 (Map 产物)
+    draft_report: str                         # 初稿报告全文 (Reduce 统合产物)
     final_report: str                         # 最终通过防幻觉校验的研报全文
     logs: Annotated[List[str], operator.add]  # 实时运行日志流水

@@ -315,6 +315,22 @@ def main():
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(report_content)
 
+    # 同步归档至 SQLite 数据库
+    try:
+        from app.db.sqlite_store import save_report_archive
+        save_report_archive(
+            task_id=task_id,
+            user_query=state.get("user_query", ""),
+            research_depth=state.get("research_depth", "standard"),
+            report_style=state.get("report_style", "consulting"),
+            final_report=report_content,
+            outline=state.get("outline", []),
+            citations=state.get("citations", []),
+            summary=state.get("clarification", "")
+        )
+    except Exception as e:
+        console.print(f"[dim yellow]SQLite 归档跳过: {e}[/dim yellow]")
+
     console.print(f"\n[bold green]🎉 深度研究报告已通过防幻觉校验并成功落盘！[/bold green]")
     console.print(f"📄 [yellow]文件保存路径:[/yellow] {output_path.resolve()}\n")
     

@@ -13,6 +13,7 @@ export interface ChapterOutline {
   focus: string;
   search_queries?: string[];
   extracted_facts?: string[];
+  bound_documents?: string[];
 }
 
 export interface ResearchState {

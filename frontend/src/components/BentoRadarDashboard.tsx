@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { CitationSource, ChapterOutline } from '../types';
 import { Language, translations } from '../locales/translations';
+import { formatCitationDomain } from '../lib/utils';
 
 interface BentoRadarDashboardProps {
   logs: string[];
@@ -120,35 +121,44 @@ export const BentoRadarDashboard: React.FC<BentoRadarDashboardProps> = ({
                 {t.emptyScrape}
               </div>
             ) : (
-              citations.map((c, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl theme-card space-y-1.5 group hover:border-blue-500/40 transition"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="w-5 h-5 rounded theme-nested font-mono text-[10px] font-bold flex items-center justify-center">
-                      {c.id}
-                    </span>
-                    <a
-                      href={c.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-blue-500 hover:underline flex items-center gap-1 truncate max-w-[140px]"
-                    >
-                      <span>{new URL(c.url || 'http://web').hostname.replace('www.', '')}</span>
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
+              citations.map((c, idx) => {
+                const domainInfo = formatCitationDomain(c.url);
+                return (
+                  <div
+                    key={idx}
+                    className="p-3 rounded-xl theme-card space-y-1.5 group hover:border-blue-500/40 transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="w-5 h-5 rounded theme-nested font-mono text-[10px] font-bold flex items-center justify-center">
+                        {c.id}
+                      </span>
+                      {domainInfo.isHttp ? (
+                        <a
+                          href={c.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-blue-500 hover:underline flex items-center gap-1 truncate max-w-[140px]"
+                        >
+                          <span>{domainInfo.label}</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] opacity-70 truncate max-w-[140px] font-mono">
+                          {domainInfo.label}
+                        </span>
+                      )}
+                    </div>
+
+                    <h4 className="text-xs font-semibold line-clamp-1 group-hover:text-blue-500 transition">
+                      {c.title}
+                    </h4>
+
+                    <p className="text-[11px] opacity-75 line-clamp-2 leading-relaxed">
+                      {c.snippet}
+                    </p>
                   </div>
-
-                  <h4 className="text-xs font-semibold line-clamp-1 group-hover:text-blue-500 transition">
-                    {c.title}
-                  </h4>
-
-                  <p className="text-[11px] opacity-75 line-clamp-2 leading-relaxed">
-                    {c.snippet}
-                  </p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

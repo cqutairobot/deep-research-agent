@@ -9,6 +9,12 @@ test_rag_docs/
 AI深度研究助手_*.md
 demo.html
 backend/output/
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+bug及其解决方案.md
+docs/
 
 # Python
 __pycache__/

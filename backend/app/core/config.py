@@ -28,10 +28,17 @@ class Settings:
             "deepseek-v4-flash-vision-exp"
         ).strip()
         
+        self.YDC_API_KEY = (
+            os.getenv("YDC_API_KEY") or 
+            os.getenv("YOU_API_KEY") or 
+            ""
+        ).strip()
         self.TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
         self.JINA_API_KEY = os.getenv("JINA_API_KEY", None)
         self.MAX_SEARCH_RESULTS_PER_QUERY = int(os.getenv("MAX_SEARCH_RESULTS", "5"))
         self.SCRAPER_TIMEOUT_SECONDS = float(os.getenv("SCRAPER_TIMEOUT", "15.0"))
+        self.LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT", "60.0"))
+        self.LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "2"))
 
 settings = Settings()
 
@@ -42,7 +49,7 @@ def call_llm(
     max_tokens: int = 8192
 ) -> str:
     """
-    统一调用真实大模型接口 (支持 deepseek-v4-flash-vision-exp / deepseek-chat 等原生及兼容多模态模型)
+    统一调用真实大模型接口 (支持 deepseek-v4-flash-vision-exp / deepseek-chat 等原生及兼容多模态模型，带超时与重试保护)
     """
     settings.reload()
     api_key = settings.LLM_API_KEY
@@ -52,9 +59,19 @@ def call_llm(
 
     try:
         from openai import OpenAI
+        import httpx
+        
+        # 配置连接与总请求超时 (Bug 14)
+        custom_timeout = httpx.Timeout(
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            connect=10.0
+        )
+        
         client = OpenAI(
             api_key=api_key,
-            base_url=settings.LLM_BASE_URL
+            base_url=settings.LLM_BASE_URL,
+            timeout=custom_timeout,
+            max_retries=settings.LLM_MAX_RETRIES
         )
         
         model_name = settings.LLM_MODEL

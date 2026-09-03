@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +16,28 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# 允许跨域请求 (CORS)
+# 允许跨域请求 (CORS - Bug 12)
+cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
+if cors_origins_env:
+    allow_origins = [orig.strip() for orig in cors_origins_env.split(",") if orig.strip()]
+else:
+    # 规范开发环境 Origin，避免通配符 '*' 与 credentials=True 产生浏览器冲突
+    allow_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allow_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -36,8 +53,15 @@ if frontend_dist.exists() and (frontend_dist / "index.html").exists():
 
     @app.get("/", tags=["Frontend"])
     async def serve_frontend_index():
-        """提供前端单页面应用入口"""
-        return FileResponse(frontend_dist / "index.html")
+        """提供前端单页面应用入口 (禁用 HTML 缓存，保证最新前端代码即时生效)"""
+        return FileResponse(
+            frontend_dist / "index.html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
 else:
     @app.get("/", tags=["Index"])
     async def index():

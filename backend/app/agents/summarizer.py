@@ -12,20 +12,29 @@ SUMMARIZER_PROMPT = """你是一位专业的事实抽取与信息压缩专家。
 4. 严格输出 2~4 条纯文本，每条以 "- " 开头，不要输出任何其它前后缀。
 """
 
+from app.tools.smart_reranker import chunk_webpage_for_rerank, rerank_chunks
+
 def compress_webpage_facts(raw_text: str, focus_topic: str, max_facts: int = 3) -> List[str]:
     """
     Map-Reduce 范式：对单篇抓取的长网页内容执行目标导向的信息压缩，提取高密度事实。
+    结合 Smart Chunking + Rerank 精准召回最相关的 Top 3 核心段落，彻底消除首部机械截断 (Phase 1 升级)。
+    失败或内容过短时返回空列表，禁止虚构合成事实 (Bug 6)。
     """
     if not raw_text or len(raw_text.strip()) < 30:
-        return [f"关于【{focus_topic}】的相关动态信息已记录。"]
+        return []
 
-    # 截取前 4000 字符，避免一次性消耗过多 Token
-    trimmed_text = raw_text[:4000]
+    # 若文本较长，通过智能段落重排序捞取最相关的 Top 3 核心段落
+    if len(raw_text) > 2500:
+        chunks = chunk_webpage_for_rerank(raw_text, chunk_size=800)
+        top_chunks = rerank_chunks(chunks, query=focus_topic, focus=focus_topic, top_k=3)
+        trimmed_text = "\n\n---\n\n".join(top_chunks) if top_chunks else raw_text[:4000]
+    else:
+        trimmed_text = raw_text[:4000]
 
     prompt = f"""
     【调研主题/关注点】：{focus_topic}
     
-    【网页原文片段】：
+    【网页原文精选片段 (Rerank 召回)】：
     {trimmed_text}
     
     请从中抽取核心事实：
@@ -46,4 +55,4 @@ def compress_webpage_facts(raw_text: str, focus_topic: str, max_facts: int = 3) 
     if meaningful:
         return meaningful[:max_facts]
     
-    return [trimmed_text[:150].strip() + "..."]
+    return []

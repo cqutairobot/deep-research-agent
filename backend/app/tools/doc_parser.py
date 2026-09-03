@@ -2,17 +2,32 @@ import io
 import re
 from typing import List, Dict, Any
 
+MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024 # 15MB
+
 def parse_uploaded_document(file_name: str, file_bytes: bytes) -> Dict[str, Any]:
     """
-    解析用户上传的本地文档 (.pdf, .docx, .txt, .md)，提取纯文本与语义切片
+    解析用户上传的本地文档 (.pdf, .docx, .txt, .md)，提取纯文本与语义切片 (Bug 9)
     """
+    if len(file_bytes) > MAX_UPLOAD_SIZE_BYTES:
+        raise ValueError(f"文件大小 ({len(file_bytes) / 1024 / 1024:.1f}MB) 超出允许的 15MB 上限。")
+
     ext = file_name.lower().split('.')[-1] if '.' in file_name else ''
+    
+    if ext == 'doc':
+        raise ValueError("不支持旧版 Word .doc 二进制格式，请另存为 .docx 或 .pdf 后重新上传。")
+
+    if ext not in ['pdf', 'docx', 'txt', 'md']:
+        raise ValueError(f"不支持的文件格式: .{ext}。仅支持 .pdf, .docx, .txt, .md。")
+
     full_text = ""
 
     try:
         if ext in ['txt', 'md']:
             full_text = file_bytes.decode('utf-8', errors='ignore')
         elif ext == 'pdf':
+            # 校验 PDF 文件头魔数
+            if not file_bytes.startswith(b'%PDF'):
+                raise ValueError("PDF 文件头损坏或非有效 PDF 文档格式。")
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(file_bytes))
             pages_text = []
@@ -21,16 +36,19 @@ def parse_uploaded_document(file_name: str, file_bytes: bytes) -> Dict[str, Any]
                 if txt.strip():
                     pages_text.append(f"[第 {i+1} 页] {txt.strip()}")
             full_text = "\n\n".join(pages_text)
-        elif ext in ['docx', 'doc']:
+        elif ext == 'docx':
+            # 校验 ZIP / OOXML 魔数 (PK\x03\x04)
+            if not file_bytes.startswith(b'PK\x03\x04'):
+                raise ValueError("DOCX 文件损坏或非有效 docx 文档格式。")
             from docx import Document
             doc = Document(io.BytesIO(file_bytes))
             paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
             full_text = "\n\n".join(paragraphs)
-        else:
-            full_text = file_bytes.decode('utf-8', errors='ignore')
+    except ValueError:
+        raise
     except Exception as e:
         print(f"[DocParser Error] 解析文件 {file_name} 失败: {e}")
-        full_text = f"（文件 {file_name} 解析部分异常）"
+        raise ValueError(f"解析文件 {file_name} 失败: {str(e)}")
 
     # 清洗文本
     clean_text = re.sub(r'\r\n', '\n', full_text)

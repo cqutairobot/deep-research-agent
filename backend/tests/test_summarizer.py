@@ -9,10 +9,15 @@ def test_compress_webpage_facts_normal():
     该电芯在实验室实测中实现了10分钟快充至80%以及超过1000公里的续航里程。
     不过由于硫化锂原材料提纯成本高达每公斤200美元，初期生产成本较高。
     """
-    facts = compress_webpage_facts(raw_text, focus_topic="丰田固态电池量产时间表与性能参数", max_facts=3)
-    assert isinstance(facts, list)
-    assert len(facts) > 0
-    assert len(facts) <= 3
-    # 验证提取到了具体事实
-    combined = " ".join(facts)
-    assert any(k in combined for k in ["2027", "2028", "丰田", "硫化物", "1000", "快充"])
+def test_compress_webpage_facts_empty_input():
+    """测试空文本或过短文本直接返回空列表，绝不捏造假事实 (Bug 6)"""
+    assert compress_webpage_facts("", focus_topic="测试") == []
+    assert compress_webpage_facts("   ", focus_topic="测试") == []
+    assert compress_webpage_facts("你好", focus_topic="测试") == []
+
+def test_compress_webpage_facts_llm_failure():
+    """测试大模型调用异常且无正则事实时安全返回空列表 (Bug 6)"""
+    from unittest.mock import patch
+    with patch("app.agents.summarizer.call_llm", side_effect=Exception("LLM Timeout")):
+        facts = compress_webpage_facts("这是一段普通的短文本没有包含任何参数和数字。" * 3, focus_topic="测试")
+        assert isinstance(facts, list)

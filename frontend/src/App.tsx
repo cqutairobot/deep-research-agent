@@ -5,22 +5,28 @@ import { OutlineCanvas } from './components/OutlineCanvas';
 import { BentoRadarDashboard } from './components/BentoRadarDashboard';
 import { ReportViewer } from './components/ReportViewer';
 import { FollowUpDrawer } from './components/FollowUpDrawer';
+import { HistoryDrawer } from './components/HistoryDrawer';
 import { ExportModal } from './components/ExportModal';
 import { MindmapModal } from './components/MindmapModal';
 import { ThemeType } from './components/ThemeSelector';
 import { Language } from './locales/translations';
 import { ChapterOutline, CitationSource, TaskStatus } from './types';
-import { createTask, approveOutline, subscribeToTaskStream } from './lib/api';
+import { createTask, approveOutline, cancelTask, subscribeToTaskStream } from './lib/api';
+
+const VALID_THEMES: ThemeType[] = ['vintage', 'light', 'emerald', 'dark'];
+const VALID_LANGS: Language[] = ['zh', 'en'];
 
 export const App: React.FC = () => {
-  // 主题配色状态 (持久化到 localStorage)
+  // 主题配色状态 (持久化到 localStorage，带白名单运行时校验 Bug 27)
   const [theme, setTheme] = useState<ThemeType>(() => {
-    return (localStorage.getItem('app-theme') as ThemeType) || 'vintage';
+    const saved = localStorage.getItem('app-theme') as ThemeType;
+    return VALID_THEMES.includes(saved) ? saved : 'vintage';
   });
 
-  // 国际化语言状态 (持久化到 localStorage)
+  // 国际化语言状态 (持久化到 localStorage，带白名单运行时校验 Bug 27)
   const [lang, setLang] = useState<Language>(() => {
-    return (localStorage.getItem('app-lang') as Language) || 'zh';
+    const saved = localStorage.getItem('app-lang') as Language;
+    return VALID_LANGS.includes(saved) ? saved : 'zh';
   });
 
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -37,9 +43,11 @@ export const App: React.FC = () => {
   const [iterationCount, setIterationCount] = useState<number>(1);
   const [maxIterations, setMaxIterations] = useState<number>(2);
   const [finalReport, setFinalReport] = useState<string>('');
+  const [uploadedDocs, setUploadedDocs] = useState<any[]>([]);
   
   // 弹窗与抽屉
   const [isQAOpen, setIsQAOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isMindmapOpen, setIsMindmapOpen] = useState(false);
   const [deepDiveQuestion, setDeepDiveQuestion] = useState('');
@@ -74,9 +82,15 @@ export const App: React.FC = () => {
     style: 'consulting' | 'academic' | 'executive',
     localDocs?: any[]
   ) => {
+    // 若已有正在运行的任务，先行取消后台 (Bug 15)
+    if (taskId && (currentStep === 2 || currentStep === 3)) {
+      cancelTask(taskId).catch(() => {});
+    }
+
     setIsLoading(true);
     setErrorMsg(null);
     setQuery(userQuery);
+    setUploadedDocs(localDocs || []);
     setLogs([`[System] Initializing research task: "${userQuery}" (${localDocs?.length || 0} local documents)...`]);
     
     const maxIter = depth === 'quick' ? 1 : (depth === 'deep' ? 3 : 2);
@@ -96,6 +110,8 @@ export const App: React.FC = () => {
         },
         (err) => {
           console.error('SSE Error:', err);
+          setErrorMsg(lang === 'zh' ? '实时流传输中断，请重试或刷新' : 'Stream connection error');
+          setIsLoading(false);
         }
       );
       unsubscribeRef.current = unsub;
@@ -109,6 +125,19 @@ export const App: React.FC = () => {
   // 2. 处理实时流事件
   const handleStreamEvent = (eventType: string, data: any) => {
     switch (eventType) {
+      case 'status':
+        if (data.state?.outline && data.state.outline.length > 0) {
+          setOutline(data.state.outline);
+          if (data.state.clarification) setClarification(data.state.clarification);
+          if (data.status === 'waiting_outline_approval' || data.status === 'planning') {
+            setCurrentStep(2);
+            setIsLoading(false);
+          }
+        }
+        if (data.state?.citations) setCitations(data.state.citations);
+        if (data.state?.logs) setLogs(data.state.logs);
+        break;
+
       case 'thought':
         if (data.message) {
           setLogs(prev => [...prev, data.message]);
@@ -145,16 +174,21 @@ export const App: React.FC = () => {
         break;
 
       case 'completed':
-        if (data.final_report) {
-          setFinalReport(data.final_report);
-          if (data.citations) setCitations(data.citations);
-          setCurrentStep(4);
-          setIsLoading(false);
-        }
+        // 无论 final_report 是否为空，均正常结束加载态 (Bug 17)
+        setFinalReport(data.final_report || '');
+        if (data.citations) setCitations(data.citations);
+        setCurrentStep(4);
+        setIsLoading(false);
         break;
 
+      case 'failed':
       case 'error':
-        setErrorMsg(data.error || '任务执行发生异常');
+        // 统一失败终态事件处理 (Bug 1)
+        setErrorMsg(data.message || data.error || '任务执行发生异常');
+        setIsLoading(false);
+        break;
+
+      case 'cancelled':
         setIsLoading(false);
         break;
 
@@ -179,8 +213,12 @@ export const App: React.FC = () => {
     }
   };
 
-  // 4. 重置调研
+  // 4. 重置调研 (Bug 15: 前端 Reset 时向后端发送取消请求)
   const handleReset = () => {
+    if (taskId && (currentStep === 2 || currentStep === 3)) {
+      cancelTask(taskId).catch(() => {});
+    }
+
     if (unsubscribeRef.current) {
       unsubscribeRef.current();
       unsubscribeRef.current = null;
@@ -192,6 +230,7 @@ export const App: React.FC = () => {
     setLogs([]);
     setFinalReport('');
     setCriticFeedback('');
+    setUploadedDocs([]);
     setIterationCount(1);
     setIsLoading(false);
     setErrorMsg(null);
@@ -204,6 +243,44 @@ export const App: React.FC = () => {
       : `Please deep dive into this statement based on the report: "${selectedText}"`
     );
     setIsQAOpen(true);
+  };
+
+  // 6. 历史研报载入
+  const handleSelectHistoryReport = (detail: any) => {
+    if (!detail) return;
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+    setTaskId(detail.task_id);
+    setQuery(detail.user_query || '');
+    setFinalReport(detail.final_report || '');
+    setOutline(detail.outline || []);
+    setCitations(detail.citations || []);
+    setClarification(detail.summary || '');
+    setLogs([`[Archive] Loaded historical research: "${detail.user_query}" (${detail.word_count || 0} characters)`]);
+    setCurrentStep(4);
+    setIsLoading(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 7. 段落锚定平滑滚动与高亮
+  const handleScrollToAnchor = (anchorText: string) => {
+    const clean = anchorText.replace(/^[⚓\s*\[\]]+/, '').replace(/[\[\]]/g, '').trim();
+    const headings = document.querySelectorAll('h1, h2, h3, h4');
+    for (let i = 0; i < headings.length; i++) {
+      const el = headings[i] as HTMLElement;
+      if (el.innerText.includes(clean) || (clean.includes('执行摘要') && el.innerText.includes('执行摘要'))) {
+        const yOffset = -80;
+        const y = el.getBoundingClientRect().top + window.pageYOffset + yOffset;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+        el.classList.remove('anchor-highlight-pulse');
+        void el.offsetWidth;
+        el.classList.add('anchor-highlight-pulse');
+        setTimeout(() => el.classList.remove('anchor-highlight-pulse'), 2600);
+        break;
+      }
+    }
   };
 
   return (
@@ -219,10 +296,11 @@ export const App: React.FC = () => {
         style={{ backgroundColor: 'var(--glow-2)' }}
       />
 
-      {/* 顶部导航栏 (含中英文语言切换与主题切换) */}
+      {/* 顶部导航栏 (含历史研报库、语言切换与主题切换) */}
       <Navbar
         currentStep={currentStep}
         onReset={handleReset}
+        onOpenHistory={() => setIsHistoryOpen(true)}
         currentTheme={theme}
         onThemeChange={setTheme}
         currentLang={lang}
@@ -257,6 +335,7 @@ export const App: React.FC = () => {
             onApprove={handleApproveOutline}
             isLoading={isLoading}
             currentLang={lang}
+            localDocs={uploadedDocs}
           />
         )}
 
@@ -300,6 +379,15 @@ export const App: React.FC = () => {
         report={finalReport}
         citations={citations}
         initialQuestion={deepDiveQuestion}
+        onAnchorClick={handleScrollToAnchor}
+        currentLang={lang}
+      />
+
+      {/* 历史研报抽屉 */}
+      <HistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectReport={handleSelectHistoryReport}
         currentLang={lang}
       />
 

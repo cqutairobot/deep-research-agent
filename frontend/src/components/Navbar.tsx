@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, CheckCircle2, RotateCcw, Activity } from 'lucide-react';
+import { Sparkles, CheckCircle2, RotateCcw, Activity, FolderClock } from 'lucide-react';
 import { ThemeSelector, ThemeType } from './ThemeSelector';
 import { LanguageSelector } from './LanguageSelector';
 import { Language, translations } from '../locales/translations';
@@ -7,6 +7,7 @@ import { Language, translations } from '../locales/translations';
 interface NavbarProps {
   currentStep: number;
   onReset: () => void;
+  onOpenHistory?: () => void;
   currentTheme: ThemeType;
   onThemeChange: (theme: ThemeType) => void;
   currentLang: Language;
@@ -18,6 +19,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   currentStep,
   onReset,
+  onOpenHistory,
   currentTheme,
   onThemeChange,
   currentLang,
@@ -108,9 +110,25 @@ export const Navbar: React.FC<NavbarProps> = ({
             currentLang={currentLang}
           />
 
+          {/* 历史研报库按钮 */}
+          {onOpenHistory && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              title={currentLang === 'zh' ? '查看历史研报归档' : 'View History Reports'}
+              className="flex items-center gap-1.5 text-xs opacity-85 hover:opacity-100 px-3 py-2 rounded-xl border theme-card transition shadow-sm cursor-pointer min-h-[36px] sm:min-h-[auto]"
+            >
+              <FolderClock className="w-3.5 h-3.5 theme-accent-text" />
+              <span className="hidden sm:inline">{currentLang === 'zh' ? '历史研报' : 'History'}</span>
+            </button>
+          )}
+
           <button
+            type="button"
             onClick={onReset}
-            className="flex items-center gap-1.5 text-xs opacity-80 hover:opacity-100 px-3 py-1.5 rounded-lg border theme-card transition shadow-sm cursor-pointer"
+            aria-label={t.newResearch}
+            title={t.newResearch}
+            className="flex items-center gap-1.5 text-xs opacity-80 hover:opacity-100 px-3 py-2 rounded-xl border theme-card transition shadow-sm cursor-pointer min-h-[36px] sm:min-h-[auto]"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{t.newResearch}</span>

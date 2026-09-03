@@ -1,50 +1,98 @@
 import os
 import httpx
 from typing import List, Dict, Any, Optional
+from ddgs import DDGS
 from app.core.config import settings
 
-def search_web(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+def _search_you_com(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     """
-    真实全网实时搜索引擎。
-    1. 优先使用 Tavily Search API（若配置了 TAVILY_API_KEY）。
-    2. 默认使用 DDGS 真实全网检索（无需任何 API Key，100% 实时真实网络数据）。
+    You.com Web Search API (Tier 1 首选商业级搜索)
+    """
+    ydc_api_key = getattr(settings, "YDC_API_KEY", "") or os.getenv("YDC_API_KEY", "")
+    if not ydc_api_key or ydc_api_key == "your_you_api_key_here":
+        return []
+
+    try:
+        headers = {
+            "X-API-Key": ydc_api_key,
+            "Content-Type": "application/json"
+        }
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.post(
+                "https://api.you.com/v1/search",
+                headers=headers,
+                json={
+                    "query": query,
+                    "num_web_results": max_results
+                }
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                web_hits = data.get("results", {}).get("web", [])
+                results = []
+                for item in web_hits:
+                    url = item.get("url", "")
+                    if not url:
+                        continue
+                    snippets = item.get("snippets", [])
+                    desc = item.get("description", "")
+                    content = " ".join(snippets) if snippets else desc
+                    results.append({
+                        "title": item.get("title", "未命名网页"),
+                        "url": url,
+                        "content": content,
+                        "snippet": content[:300] if content else desc[:300],
+                        "score": 0.98
+                    })
+                if results:
+                    return results
+    except Exception as e:
+        print(f"[Search Warning] You.com search failed: {e}. Falling back...")
+    return []
+
+def _search_tavily(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """
+    Tavily Search API (Tier 2 次选商业搜索)
     """
     tavily_api_key = settings.TAVILY_API_KEY or os.getenv("TAVILY_API_KEY", "")
-    
-    # 1. 如果配置了 Tavily Key，调用 Tavily
-    if tavily_api_key and tavily_api_key != "your_tavily_api_key_here":
-        try:
-            with httpx.Client(timeout=12.0) as client:
-                resp = client.post(
-                    "https://api.tavily.com/search",
-                    json={
-                        "api_key": tavily_api_key,
-                        "query": query,
-                        "search_depth": "advanced",
-                        "max_results": max_results,
-                        "include_answer": False,
-                        "include_raw_content": False
-                    }
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    results = []
-                    for item in data.get("results", []):
-                        results.append({
-                            "title": item.get("title", "未命名网页"),
-                            "url": item.get("url", ""),
-                            "content": item.get("content", ""),
-                            "snippet": item.get("content", "")[:300],
-                            "score": item.get("score", 0.95)
-                        })
-                    if results:
-                        return results
-        except Exception as e:
-            print(f"[Search Warning] Tavily search failed: {e}. Trying DDGS...")
+    if not tavily_api_key or tavily_api_key == "your_tavily_api_key_here":
+        return []
 
-    # 2. 使用 DDGS 执行真实的实时全网检索
     try:
-        from ddgs import DDGS
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": tavily_api_key,
+                    "query": query,
+                    "search_depth": "advanced",
+                    "max_results": max_results,
+                    "include_answer": False,
+                    "include_raw_content": False
+                }
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                results = []
+                for item in data.get("results", []):
+                    results.append({
+                        "title": item.get("title", "未命名网页"),
+                        "url": item.get("url", ""),
+                        "content": item.get("content", ""),
+                        "snippet": item.get("content", "")[:300],
+                        "score": item.get("score", 0.95)
+                    })
+                if results:
+                    return results
+    except Exception as e:
+        print(f"[Search Warning] Tavily search failed: {e}. Falling back...")
+    return []
+
+def _search_ddgs(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """
+    DuckDuckGo Search (Tier 3 免费兜底)
+    """
+    try:
         ddgs = DDGS()
         raw_results = list(ddgs.text(query, max_results=max_results))
         results = []
@@ -60,15 +108,28 @@ def search_web(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
             return results
     except Exception as e:
         print(f"[Search Error] DDGS live search failed: {e}")
+    return []
 
-    # 3. 极端网络超时时的鲁棒兜底 (保证返回数量匹配 max_results)
-    fallback_results = []
-    for i in range(1, max_results + 1):
-        fallback_results.append({
-            "title": f"关于 '{query}' 的实时检索记录 (第 {i} 条)",
-            "url": f"https://duckduckgo.com/?q={query}&p={i}",
-            "content": f"已对课题 '{query}' 进行全网检索与要点提取 (结果分片 {i})。",
-            "snippet": f"关于 '{query}' 的检索记录分片 {i}。",
-            "score": 0.5
-        })
-    return fallback_results
+def search_web(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """
+    真实全网多源实时搜索引擎 (三级容灾矩阵: You.com -> Tavily -> DDGS)。
+    严格遵循零伪造原则，失败或无结果时返回空列表。
+    """
+    # 1. 首选 You.com Web Search API
+    results = _search_you_com(query, max_results=max_results)
+    if results:
+        return results
+
+    # 2. 次选 Tavily Search API
+    results = _search_tavily(query, max_results=max_results)
+    if results:
+        return results
+
+    # 3. 兜底 DDGS 实时检索
+    results = _search_ddgs(query, max_results=max_results)
+    if results:
+        return results
+
+    # 4. 搜索失败或无结果时返回空列表 (Bug 5: 严禁伪造虚构检索结果与链接)
+    print(f"[Search Info] 检索词 '{query}' 未返回有效网络结果。")
+    return []

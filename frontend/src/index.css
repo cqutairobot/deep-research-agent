@@ -302,3 +302,41 @@ html, body {
   background: var(--border-subtle);
   border-radius: 4px;
 }
+
+/* ⚓ 段落锚定跳转高亮动画 */
+@keyframes anchorPulse {
+  0% {
+    background-color: rgba(245, 158, 11, 0.4);
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.6);
+  }
+  50% {
+    background-color: rgba(245, 158, 11, 0.2);
+    box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.3);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.anchor-highlight-pulse {
+  animation: anchorPulse 2.5s ease-out forwards;
+  border-radius: 0.75rem;
+  transition: all 0.3s ease;
+}
+
+/* 隐藏 Mermaid 引擎在解析失败时偶发遗留在 body 上的错误图标（由 React 内部优雅降级接管） */
+body > svg[id*="error"],
+body > [id*="error"],
+.error-icon,
+.error-text {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  pointer-events: none !important;
+}
+
+

@@ -2,6 +2,7 @@ import React from 'react';
 import { ExternalLink, ShieldCheck, X } from 'lucide-react';
 import { CitationSource } from '../types';
 import { Language, translations } from '../locales/translations';
+import { formatCitationDomain } from '../lib/utils';
 
 interface CitationPopoverProps {
   citation: CitationSource;
@@ -21,10 +22,7 @@ export const CitationPopover: React.FC<CitationPopoverProps> = ({
   currentLang = 'zh'
 }) => {
   const t = translations[currentLang].report;
-  let domain = 'web source';
-  try {
-    domain = new URL(citation.url).hostname.replace('www.', '');
-  } catch {}
+  const domainInfo = formatCitationDomain(citation.url);
 
   const safeLeft = Math.max(16, Math.min(position.x - 140, window.innerWidth - 340));
   const safeTop = Math.max(16, Math.min(position.y + 6, window.innerHeight - 270));
@@ -44,7 +42,7 @@ export const CitationPopover: React.FC<CitationPopoverProps> = ({
           <span className="w-5 h-5 rounded-md theme-btn-primary text-white font-mono text-[10px] font-bold flex items-center justify-center shrink-0">
             {citation.id}
           </span>
-          <span className="text-xs font-mono theme-accent-text font-semibold truncate max-w-[150px]">{domain}</span>
+          <span className="text-xs font-mono theme-accent-text font-semibold truncate max-w-[150px]">{domainInfo.label}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
@@ -54,6 +52,7 @@ export const CitationPopover: React.FC<CitationPopoverProps> = ({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close citation popover"
             className="opacity-50 hover:opacity-100 p-0.5 rounded transition cursor-pointer"
             title="Close"
           >
@@ -75,15 +74,21 @@ export const CitationPopover: React.FC<CitationPopoverProps> = ({
         <span className="text-[10px] opacity-60 font-mono">
           {t.citationRelevance}: {((citation.score || 0.95) * 100).toFixed(0)}%
         </span>
-        <a
-          href={citation.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs theme-accent-text hover:underline font-semibold flex items-center gap-1.5 px-2 py-1 rounded-md theme-nested hover:brightness-110 transition cursor-pointer"
-        >
-          <span>{t.viewSource}</span>
-          <ExternalLink className="w-3.5 h-3.5" />
-        </a>
+        {domainInfo.isHttp ? (
+          <a
+            href={citation.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs theme-accent-text hover:underline font-semibold flex items-center gap-1.5 px-2 py-1 rounded-md theme-nested hover:brightness-110 transition cursor-pointer"
+          >
+            <span>{t.viewSource}</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        ) : (
+          <span className="text-xs opacity-60 font-mono px-2 py-0.5 rounded theme-nested">
+            {domainInfo.isLocal ? '本地私有切片' : '可信引证'}
+          </span>
+        )}
       </div>
     </div>
   );

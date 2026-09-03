@@ -7,11 +7,16 @@ import {
   List, 
   Sparkles, 
   ShieldCheck,
-  Network
+  Network,
+  FileText,
+  ExternalLink
 } from 'lucide-react';
 import { CitationSource, ChapterOutline } from '../types';
 import { CitationPopover } from './CitationPopover';
+import { MermaidDiagram } from './MermaidDiagram';
+import { MathFormula } from './MathFormula';
 import { Language, translations } from '../locales/translations';
+import { slugifyHeading, splitMarkdownBlocks } from '../lib/utils';
 
 interface ReportViewerProps {
   report: string;
@@ -75,16 +80,17 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
   const [activeHeadingId, setActiveHeadingId] = useState<string>('');
   const closeTimerRef = useRef<any>(null);
 
-  // 提取 TOC 目录 (支持 1~4 级标题)
+  // 提取 TOC 目录 (支持 1~4 级标题，使用共享 slugifyHeading - Bug 21)
   const toc = useMemo(() => {
     const headings: { level: number; text: string; id: string }[] = [];
     const lines = report.split('\n');
+    let headingIndex = 0;
     lines.forEach((line) => {
       const match = line.match(/^(#{1,4})\s+(.+)$/);
       if (match) {
         const level = match[1].length;
-        const text = match[2].replace(/\[\d+\]/g, '').replace(/\*\*/g, '').trim();
-        const id = text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const text = match[2].replace(/\[\^cite:\d+\]/g, '').replace(/\[\d+\]/g, '').replace(/\*\*/g, '').trim();
+        const id = slugifyHeading(text, headingIndex++);
         headings.push({ level, text, id });
       }
     });
@@ -204,11 +210,11 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
     }
   };
 
-  // 行内元素解析
+  // 行内元素解析 (支持 **粗体**、`代码`、LaTeX 公式、Markdown 链接 [文本](url)、[^cite:N]、[^N] 以及 [N] 角标)
   const parseInlineMarkdown = (text: string): React.ReactNode[] => {
     if (!text) return [];
 
-    const regex = /(\*\*.*?\*\*|`.*?`|\[\d+\])/g;
+    const regex = /(\*\*.*?\*\*|`.*?`|\\\[[\s\S]*?\\\]|\$\$[\s\S]*?\$\$|\\\(.*?\\\)|\$[^\$\n]+\$|\[\^cite:\d+\]|\[\^\d+\]|\[\d+\]|\[[^\]]+\]\([^\)]+\))/g;
     const parts = text.split(regex);
 
     return parts.map((part, index) => {
@@ -230,14 +236,62 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
         );
       }
 
-      const citationMatch = part.match(/^\[(\d+)\]$/);
-      if (citationMatch) {
-        const cid = parseInt(citationMatch[1], 10);
+      // Markdown 链接与本地专有文档格式 [linkText](url)
+      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        const linkText = linkMatch[1];
+        const linkUrl = linkMatch[2];
+        if (linkUrl.startsWith('local://')) {
+          const fname = linkUrl.replace('local://', '');
+          return (
+            <span
+              key={index}
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium text-xs border border-emerald-500/25 shadow-xs"
+              title={`本地私有 RAG 专有文档: ${fname}`}
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span>{linkText}</span>
+            </span>
+          );
+        }
+        return (
+          <a
+            key={index}
+            href={linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium transition cursor-pointer"
+            title={linkUrl}
+          >
+            <span>{linkText}</span>
+            <ExternalLink className="w-3 h-3 opacity-60 shrink-0" />
+          </a>
+        );
+      }
+
+      // 行内 LaTeX 块级/行内公式
+      if (
+        (part.startsWith('\\[') && part.endsWith('\\]')) ||
+        (part.startsWith('$$') && part.endsWith('$$'))
+      ) {
+        return <MathFormula key={index} formula={part} displayMode={true} />;
+      }
+      if (
+        (part.startsWith('\\(') && part.endsWith('\\)')) ||
+        (part.startsWith('$') && part.endsWith('$') && part.length >= 2)
+      ) {
+        return <MathFormula key={index} formula={part} displayMode={false} />;
+      }
+
+      const citeTokenMatch = part.match(/^\[\^cite:(\d+)\]$/) || part.match(/^\[\^(\d+)\]$/) || part.match(/^\[(\d+)\]$/);
+      if (citeTokenMatch) {
+        const cid = parseInt(citeTokenMatch[1], 10);
         return (
           <button
             key={index}
             type="button"
             className="citation-badge"
+            aria-label={`Citation [${cid}]`}
             onMouseEnter={(e) => handleCitationMouseEnter(e, cid)}
             onMouseLeave={handleCitationMouseLeave}
             onClick={(e) => handleCitationClick(e, cid)}
@@ -252,17 +306,49 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
     });
   };
 
-  // 块级元素解析 (全面支持 h1, h2, h3, h4, h5, table, ul, blockquote)
+  // 块级元素解析 (全面支持 h1, h2, h3, h4, h5, table, ul, blockquote, LaTeX, Mermaid)
   const renderFormattedMarkdown = (content: string) => {
-    const blocks = content.split('\n\n');
+    const blocks = splitMarkdownBlocks(content);
+    let headingCount = 0;
     return blocks.map((block, bIdx) => {
       const trimmed = block.trim();
       if (!trimmed) return null;
 
+      try {
+        // 0. Mermaid 图表渲染 (支持 ```mermaid 围栏代码块及裸 subgraph / graph 语法块)
+      const isMermaid = 
+        trimmed.startsWith('```mermaid') ||
+        (trimmed.startsWith('```') && (trimmed.includes('graph ') || trimmed.includes('flowchart ') || trimmed.includes('subgraph ') || trimmed.includes('gantt') || trimmed.includes('sequenceDiagram'))) ||
+        trimmed.startsWith('graph ') ||
+        trimmed.startsWith('flowchart ') ||
+        trimmed.startsWith('subgraph ') ||
+        trimmed.startsWith('sequenceDiagram') ||
+        trimmed.startsWith('gantt') ||
+        (trimmed.includes('subgraph ') && trimmed.includes('-->') && trimmed.includes('end'));
+
+      if (isMermaid) {
+        return <MermaidDiagram key={bIdx} code={trimmed} />;
+      }
+
+      // 0.1 常规代码块渲染
+      if (trimmed.startsWith('```') && trimmed.endsWith('```')) {
+        const codeContent = trimmed.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();
+        return (
+          <pre key={bIdx} className="my-4 p-4 rounded-xl theme-nested overflow-x-auto text-xs font-mono border border-subtle">
+            <code>{codeContent}</code>
+          </pre>
+        );
+      }
+
+      // 0.2 LaTeX 块级独立公式 (\[ ... \] 或 $$ ... $$)
+      if ((trimmed.startsWith('\\[') && trimmed.endsWith('\\]')) || (trimmed.startsWith('$$') && trimmed.endsWith('$$'))) {
+        return <MathFormula key={bIdx} formula={trimmed} displayMode={true} />;
+      }
+
       // 1. 标题 1 (# ...)
-      if (trimmed.startsWith('# ')) {
+      if (trimmed.startsWith('# ') && !trimmed.startsWith('## ')) {
         const title = trimmed.replace(/^#\s+/, '');
-        const id = title.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const id = slugifyHeading(title, headingCount++);
         return (
           <h1 key={bIdx} id={id} className="text-2xl sm:text-3xl font-extrabold mt-8 mb-4 pb-2 border-b border-subtle leading-tight scroll-mt-24">
             {parseInlineMarkdown(title)}
@@ -271,9 +357,9 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
       }
 
       // 2. 标题 2 (## ...)
-      if (trimmed.startsWith('## ')) {
+      if (trimmed.startsWith('## ') && !trimmed.startsWith('### ')) {
         const title = trimmed.replace(/^##\s+/, '');
-        const id = title.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const id = slugifyHeading(title, headingCount++);
         return (
           <h2 key={bIdx} id={id} className="text-xl sm:text-2xl font-bold mt-7 mb-3 flex items-center gap-2 leading-snug scroll-mt-24">
             <span className="w-1.5 h-5 theme-accent-bg rounded-full shrink-0" />
@@ -283,9 +369,9 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
       }
 
       // 3. 标题 3 (### ...)
-      if (trimmed.startsWith('### ')) {
+      if (trimmed.startsWith('### ') && !trimmed.startsWith('#### ')) {
         const title = trimmed.replace(/^###\s+/, '');
-        const id = title.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const id = slugifyHeading(title, headingCount++);
         return (
           <h3 key={bIdx} id={id} className="text-base sm:text-lg font-semibold theme-accent-text mt-5 mb-2 scroll-mt-24">
             {parseInlineMarkdown(title)}
@@ -294,9 +380,9 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
       }
 
       // 4. 标题 4 (#### ...)
-      if (trimmed.startsWith('#### ')) {
+      if (trimmed.startsWith('#### ') && !trimmed.startsWith('##### ')) {
         const title = trimmed.replace(/^####\s+/, '');
-        const id = title.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-');
+        const id = slugifyHeading(title, headingCount++);
         return (
           <h4 key={bIdx} id={id} className="text-sm sm:text-base font-bold opacity-90 mt-4 mb-2 scroll-mt-24">
             {parseInlineMarkdown(title)}
@@ -353,20 +439,75 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
         }
       }
 
-      // 7. 列表
+      // 7. 列表与参考文献卡片结构化解析
       if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || /^\d+\.\s/.test(trimmed)) {
-        const items = trimmed.split('\n');
+        // 智能重组列表行：将缩进的 > 引证块合并为当前列表项的 quote 字段，杜绝拆成孤立的第二个圆点列表项
+        const rawLines = trimmed.split('\n');
+        const listItems: { main: string; quote?: string }[] = [];
+        let curItem: { main: string; quote?: string } | null = null;
+
+        for (const rawLine of rawLines) {
+          const isNewItem = /^(\s{0,3})([-*]|\d+\.)\s+/.test(rawLine);
+          if (isNewItem) {
+            if (curItem) listItems.push(curItem);
+            const cleanContent = rawLine.replace(/^(\s{0,3})([-*]|\d+\.)\s+/, '');
+            curItem = { main: cleanContent };
+          } else if (curItem) {
+            const trimmedLine = rawLine.trim();
+            if (trimmedLine.startsWith('>')) {
+              const quoteContent = trimmedLine.replace(/^>\s*/, '').replace(/^["“]|["”]$/g, '');
+              curItem.quote = (curItem.quote ? curItem.quote + ' ' : '') + quoteContent;
+            } else {
+              curItem.main += ' ' + trimmedLine;
+            }
+          } else {
+            curItem = { main: rawLine.trim() };
+          }
+        }
+        if (curItem) listItems.push(curItem);
+
         return (
-          <ul key={bIdx} className="space-y-2 my-3 pl-4 border-l-2 border-subtle">
-            {items.map((item, iIdx) => {
-              const cleanItem = item.replace(/^([-*]|\d+\.)\s+/, '');
+          <div key={bIdx} className="space-y-3 my-4">
+            {listItems.map((item, iIdx) => {
+              // 匹配参考文献引证项格式：[1] 或 **[1]**
+              const citeMatch = item.main.match(/^(?:\*\*\[(\d+)\]\*\*|\[(\d+)\])\s*(.*)$/);
+              if (citeMatch) {
+                const cid = citeMatch[1] || citeMatch[2];
+                const restContent = citeMatch[3];
+                return (
+                  <div key={iIdx} className="p-4 rounded-xl theme-card border border-subtle space-y-2.5 shadow-xs transition hover:border-blue-500/40">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="w-5 h-5 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 font-mono text-xs font-bold flex items-center justify-center shrink-0 border border-blue-500/30 shadow-xs">
+                        {cid}
+                      </span>
+                      <div className="text-sm font-semibold flex-1">
+                        {parseInlineMarkdown(restContent)}
+                      </div>
+                    </div>
+                    {item.quote && (
+                      <div className="pl-7 text-xs opacity-80 italic border-l-2 border-blue-500/40 leading-relaxed font-sans">
+                        “{item.quote}”
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
-                <li key={iIdx} className="text-sm leading-relaxed opacity-90">
-                  {parseInlineMarkdown(cleanItem)}
-                </li>
+                <div key={iIdx} className="flex items-start gap-2.5 text-sm leading-relaxed opacity-90 pl-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0 opacity-70" />
+                  <div className="flex-1 space-y-1">
+                    <div>{parseInlineMarkdown(item.main)}</div>
+                    {item.quote && (
+                      <div className="pl-3 text-xs opacity-75 italic border-l-2 border-subtle my-1">
+                        “{item.quote}”
+                      </div>
+                    )}
+                  </div>
+                </div>
               );
             })}
-          </ul>
+          </div>
         );
       }
 
@@ -411,11 +552,19 @@ export const ReportViewer: React.FC<ReportViewerProps> = ({
         );
       }
 
-      return (
-        <p key={bIdx} className="text-sm sm:text-base leading-relaxed my-3.5 opacity-90">
-          {parseInlineMarkdown(trimmed)}
-        </p>
-      );
+        return (
+          <p key={bIdx} className="text-sm sm:text-base leading-relaxed my-3.5 opacity-90">
+            {parseInlineMarkdown(trimmed)}
+          </p>
+        );
+      } catch (err) {
+        console.error(`Block render error at index ${bIdx}:`, err);
+        return (
+          <p key={bIdx} className="text-sm sm:text-base leading-relaxed my-3.5 opacity-90">
+            {trimmed}
+          </p>
+        );
+      }
     });
   };
 

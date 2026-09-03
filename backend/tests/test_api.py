@@ -64,21 +64,18 @@ async def test_cancel_task():
 
 @pytest.mark.asyncio
 async def test_human_in_the_loop_approval_api():
-    """测试人机协同大纲审批接口契约"""
-    # 1. 注册一个模拟任务
-    task_id = f"test_task_{task_manager.approval_events.__len__()}"
-    task_manager.tasks[task_id] = {
-        "task_id": task_id,
-        "status": TaskStatus.WAITING_OUTLINE_APPROVAL,
-        "created_at": 1000.0,
-        "updated_at": 1000.0,
-        "auto_approve_outline": False,
-        "state": {"task_id": task_id, "user_query": "测试审批", "outline": []},
-        "error": None
-    }
-    task_manager.approval_events[task_id] = asyncio.Event()
+    """测试人机协同大纲审批接口契约与有效载荷"""
+    task_id = task_manager.create_task(
+        user_query="测试审批API",
+        research_depth="standard",
+        report_style="consulting",
+        auto_approve_outline=False
+    )
+    task = task_manager.get_task(task_id)
+    assert task is not None
+    task["status"] = TaskStatus.WAITING_OUTLINE_APPROVAL
     
-    # 2. 提交审批修改后的大纲
+    # 提交审批修改后的大纲
     approved_payload = {
         "outline": [
             {
@@ -95,34 +92,49 @@ async def test_human_in_the_loop_approval_api():
         resp = await ac.post(f"/api/v1/research/tasks/{task_id}/approve_outline", json=approved_payload)
         assert resp.status_code == 200
         assert "大纲已确认" in resp.json()["message"]
-        assert task_manager.approval_events[task_id].is_set()
+
+@pytest.mark.asyncio
+async def test_outline_validation_empty_error():
+    """测试提交非法/空大纲时触发 Pydantic 校验拒绝 (Bug 20)"""
+    task_id = task_manager.create_task(
+        user_query="测试非法大纲",
+        research_depth="standard",
+        report_style="consulting",
+        auto_approve_outline=False
+    )
+    task = task_manager.get_task(task_id)
+    assert task is not None
+    task["status"] = TaskStatus.WAITING_OUTLINE_APPROVAL
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # 空章节数组
+        resp1 = await ac.post(f"/api/v1/research/tasks/{task_id}/approve_outline", json={"outline": []})
+        assert resp1.status_code == 422
+
+        # 章节标题为空白
+        resp2 = await ac.post(f"/api/v1/research/tasks/{task_id}/approve_outline", json={
+            "outline": [{"chapter_num": 1, "title": "  ", "focus": "有效聚焦"}]
+        })
+        assert resp2.status_code == 422
 
 @pytest.mark.asyncio
 async def test_sse_stream_generator():
-    """测试 TaskManager 核心 SSE 事件流生成器"""
-    task_id = "test_sse_task_1"
-    task_manager.tasks[task_id] = {
-        "task_id": task_id,
-        "status": TaskStatus.PLANNING,
-        "created_at": 1000.0,
-        "updated_at": 1000.0,
-        "auto_approve_outline": True,
-        "state": {"task_id": task_id, "user_query": "测试流式", "outline": []},
-        "error": None
-    }
-    task_manager.subscribers[task_id] = []
+    """测试 TaskManager 核心 SSE 事件流传输与回放"""
+    task_id = task_manager.create_task(
+        user_query="测试流式生成",
+        research_depth="quick",
+        report_style="consulting",
+        auto_approve_outline=True
+    )
     
-    # 模拟推送事件
-    generator = task_manager.subscribe_stream(task_id)
+    task_manager.emit_event(task_id, "thought", {"message": "正在规划大纲..."})
     
-    # 读取第一条事件 (状态事件)
-    first_event = await generator.asend(None)
-    assert first_event["event"] == "status"
-    data = json.loads(first_event["data"])
-    assert data["task_id"] == task_id
-    
-    # 模拟主动广播一条事件
-    task_manager._emit_event(task_id, "thought", {"message": "正在思考中..."})
-    second_event = await generator.asend(None)
-    assert second_event["event"] == "thought"
-    assert "正在思考中" in second_event["data"]
+    events = []
+    async for sse_item in task_manager.subscribe_stream(task_id):
+        events.append(sse_item)
+        if len(events) >= 2:
+            break
+
+    assert len(events) >= 2
+    assert events[0]["event"] == "status"
+    assert events[1]["event"] == "thought"
