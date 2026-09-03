@@ -14,7 +14,8 @@ export const translations = {
       liveSse: 'LIVE SSE',
       newResearch: '新建调研',
       theme: '主题配色',
-      lang: '语言 / Language'
+      lang: '语言 / Language',
+      modelSettings: '模型配置'
     },
     // CommandHero
     hero: {
@@ -40,13 +41,39 @@ export const translations = {
       depthStandard: '标准',
       depthDeep: '穷尽',
       styleLabel: '报告风格 (Report Style)',
-      styleConsulting: '商业咨询',
-      styleAcademic: '学术严谨',
-      styleExecutive: '决策简报',
+      styleConsulting: '商业咨询 (MECE/矩阵)',
+      styleLiteratureReview: '学术综述 (分类树/LaTeX)',
+      styleTutorialDocs: '技术教程 (分步实操/代码)',
+      styleExecutive: '高管内参 (BLUF/一页纸)',
+      styleBriefing: '前沿特稿 (时间线/多方博弈)',
+      styleAcademic: '学术综述',
       footerInfo: '实时全网检索 + 深度推理',
       footerInfoHybrid: '实时全网检索 + {count} 份本地文档混合 RAG',
       submitBtn: '开始规划大纲',
       submittingBtn: '正在发起...'
+    },
+    // Custom LLM Gateway Modal
+    customLLM: {
+      title: '⚙️ 自定义大模型网关设置',
+      subtitle: '支持 OpenAI 兼容格式 (DeepSeek, Qwen, Ollama) 与 Anthropic 原生格式 (Claude)。输入参数将保存在本地浏览器中，留空自动平滑回退至系统默认配置。',
+      providerLabel: '协议类型 (Provider Protocol)',
+      providerOpenAI: 'OpenAI 兼容协议 (POST /chat/completions)',
+      providerAnthropic: 'Anthropic 原生协议 (POST /v1/messages)',
+      baseUrlLabel: 'Base URL (服务端点)',
+      baseUrlPlaceholder: '留空默认: https://api.deepseek.com',
+      apiKeyLabel: 'API Key (密钥)',
+      apiKeyPlaceholder: '输入你的自定义 sk-... 密钥 (本地持久化)',
+      modelNameLabel: '模型标识 (Model Identifier)',
+      modelNamePlaceholder: '例如: deepseek-chat 或 claude-3-5-sonnet-20241022',
+      tempLabel: '生成温度 (Temperature)',
+      testBtn: '测试连接',
+      testingBtn: '正在握手...',
+      saveBtn: '保存配置',
+      resetBtn: '重置为默认',
+      testSuccess: '✅ 连接测试成功！延迟: {ms}ms',
+      testFail: '❌ 连接测试失败: {err}',
+      savedMsg: '模型网关配置已保存并应用！',
+      resetMsg: '已清除自定义配置，恢复系统默认模型。'
     },
     // Outline
     outline: {
@@ -95,7 +122,14 @@ export const translations = {
       citationVerified: '已核验证据',
       citationRelevance: '置信度',
       viewSource: '查看原始网页',
-      pinHint: '悬浮查看信源，点击锁定'
+      pinHint: '悬浮查看信源，点击锁定',
+      podcastTitle: 'AI 研报播客速听 (Edge-TTS)',
+      podcastLoading: '正在合成自然语音...',
+      podcastPlay: '播放播客',
+      podcastPause: '暂停',
+      podcastSpeed: '倍速',
+      podcastDownload: '下载 MP3 音频',
+      podcastError: '音频合成异常，请稍后重试'
     },
     // Follow up Drawer
     chat: {
@@ -117,6 +151,13 @@ export const translations = {
       docxGenerating: '正在生成 Word 文档...',
       mdTitle: '下载 Markdown 源码 (.md)',
       mdDesc: '保留原始 Markdown 结构、表格与文献溯源锚点',
+      marpTitle: '导出 Marp PPT 演示文稿 (.md)',
+      marpDesc: '一键将研报衍生为标准分页幻灯片，兼容 VS Code Marp 插件与一键导出 PPTX / PDF',
+      marpPreviewTitle: 'Marp 幻灯片代码预览',
+      marpCopyBtn: '复制 Marp 源码',
+      marpDownloadBtn: '下载 .md 幻灯片',
+      marpPagesBadge: '共 {count} 页演示幻灯片',
+      marpCopySuccess: 'Marp 源码已复制到剪贴板！',
       pdfTitle: '导出为出版级 PDF / 打印',
       pdfDesc: '生成纯净 A4 打印预览版面并一键另存为 PDF',
       mindmapJsonTitle: '下载思维导图数据结构 (.json)',
@@ -152,7 +193,8 @@ export const translations = {
       liveSse: 'LIVE SSE',
       newResearch: 'New Research',
       theme: 'Color Theme',
-      lang: 'Language / 语言'
+      lang: 'Language / 语言',
+      modelSettings: 'Model Gateway'
     },
     // CommandHero
     hero: {
@@ -178,13 +220,39 @@ export const translations = {
       depthStandard: 'Standard',
       depthDeep: 'Exhaustive',
       styleLabel: 'Report Style',
-      styleConsulting: 'Consulting',
-      styleAcademic: 'Academic',
-      styleExecutive: 'Executive',
+      styleConsulting: 'Consulting (MECE / Matrix)',
+      styleLiteratureReview: 'Literature Review (Taxonomy / LaTeX)',
+      styleTutorialDocs: 'Tutorial & Docs (Step-by-Step / Code)',
+      styleExecutive: 'Executive Memo (BLUF / 1-Page)',
+      styleBriefing: 'Industry Briefing (Timeline / Stakeholders)',
+      styleAcademic: 'Academic Review',
       footerInfo: 'Real-time Web Search + Deep Reasoning',
       footerInfoHybrid: 'Real-time Web Search + {count} Local Documents Hybrid RAG',
       submitBtn: 'Generate Outline',
       submittingBtn: 'Initializing...'
+    },
+    // Custom LLM Gateway Modal
+    customLLM: {
+      title: '⚙️ Custom LLM Gateway Settings',
+      subtitle: 'Supports OpenAI-compatible format (DeepSeek, Qwen, Ollama) and Anthropic Native format (Claude). Parameters are stored locally in your browser. Leave blank to smoothly fall back to .env defaults.',
+      providerLabel: 'Provider Protocol',
+      providerOpenAI: 'OpenAI Compatible (POST /chat/completions)',
+      providerAnthropic: 'Anthropic Native (POST /v1/messages)',
+      baseUrlLabel: 'Base URL (Endpoint)',
+      baseUrlPlaceholder: 'Leave empty for default: https://api.deepseek.com',
+      apiKeyLabel: 'API Key',
+      apiKeyPlaceholder: 'Enter your custom sk-... key (stored locally)',
+      modelNameLabel: 'Model Identifier',
+      modelNamePlaceholder: 'e.g. deepseek-chat or claude-3-5-sonnet-20241022',
+      tempLabel: 'Sampling Temperature',
+      testBtn: 'Test Connection',
+      testingBtn: 'Testing Handshake...',
+      saveBtn: 'Save Settings',
+      resetBtn: 'Reset to Defaults',
+      testSuccess: '✅ Handshake Successful! Latency: {ms}ms',
+      testFail: '❌ Connection Failed: {err}',
+      savedMsg: 'LLM Gateway configuration saved and applied!',
+      resetMsg: 'Custom LLM configuration cleared. Using system defaults.'
     },
     // Outline
     outline: {
@@ -233,7 +301,14 @@ export const translations = {
       citationVerified: 'Verified Evidence',
       citationRelevance: 'Confidence',
       viewSource: 'View Original Webpage',
-      pinHint: 'Hover to preview, click to pin'
+      pinHint: 'Hover to preview, click to pin',
+      podcastTitle: 'AI Report Podcast (Edge-TTS)',
+      podcastLoading: 'Synthesizing voice...',
+      podcastPlay: 'Play Podcast',
+      podcastPause: 'Pause',
+      podcastSpeed: 'Speed',
+      podcastDownload: 'Download MP3',
+      podcastError: 'Audio synthesis failed'
     },
     // Follow up Drawer
     chat: {
@@ -255,6 +330,13 @@ export const translations = {
       docxGenerating: 'Generating Word document...',
       mdTitle: 'Download Markdown (.md)',
       mdDesc: 'Preserves raw Markdown structure, tables, and reference anchors',
+      marpTitle: 'Export Marp Presentation Slides (.md)',
+      marpDesc: 'Transform report into presentation slides, compatible with VS Code Marp plugin or PPTX export',
+      marpPreviewTitle: 'Marp Slides Code Preview',
+      marpCopyBtn: 'Copy Marp Source',
+      marpDownloadBtn: 'Download .md Slides',
+      marpPagesBadge: '{count} presentation slides in total',
+      marpCopySuccess: 'Marp source code copied to clipboard!',
       pdfTitle: 'Export Editorial PDF / Print',
       pdfDesc: 'Clean A4 print-ready layout for one-click Save as PDF',
       mindmapJsonTitle: 'Download Mindmap JSON Structure (.json)',

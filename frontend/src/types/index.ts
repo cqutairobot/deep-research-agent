@@ -16,11 +16,43 @@ export interface ChapterOutline {
   bound_documents?: string[];
 }
 
+export type ReportStyle = 
+  | 'consulting' 
+  | 'literature_review' 
+  | 'tutorial_docs' 
+  | 'executive' 
+  | 'briefing'
+  | 'academic'; // 向后兼容
+
+export interface CustomLLMConfig {
+  provider_type: 'openai' | 'anthropic';
+  base_url?: string;
+  api_key?: string;
+  model_name?: string;
+  temperature?: number;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  message?: string;
+  reply?: string;
+  latency_ms?: number;
+  error?: string;
+}
+
+export interface StyleRegistryItem {
+  id: string;
+  name_zh: string;
+  name_en: string;
+  color: string;
+}
+
 export interface ResearchState {
   task_id: string;
   user_query: string;
   research_depth: 'quick' | 'standard' | 'deep';
-  report_style: 'consulting' | 'academic' | 'executive';
+  report_style: ReportStyle;
+  custom_llm_config?: CustomLLMConfig;
   clarification?: string;
   outline: ChapterOutline[];
   citations: CitationSource[];

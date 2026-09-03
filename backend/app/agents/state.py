@@ -25,7 +25,8 @@ class ResearchState(TypedDict):
     task_id: str                              # 任务全局唯一 ID
     user_query: str                           # 用户原始研究命题
     research_depth: str                       # 调研深度: quick | standard | deep
-    report_style: str                         # 风格: consulting | academic | executive
+    report_style: str                         # 风格: consulting | literature_review | tutorial_docs | executive | briefing
+    custom_llm_config: Optional[Dict[str, Any]] # 自定义大模型网关参数 (OpenAI / Anthropic)
     clarification: str                        # 意图澄清或范围说明
     outline: List[ChapterOutline]             # 规划的章节大纲任务列表
     citations: List[CitationSource]           # 全局引用溯源库
@@ -44,4 +45,5 @@ class ResearchState(TypedDict):
     chapter_drafts: Optional[Dict[int, str]]  # 各章节独立深度稿件 (Map 产物)
     draft_report: str                         # 初稿报告全文 (Reduce 统合产物)
     final_report: str                         # 最终通过防幻觉校验的研报全文
+    metrics: Optional[Dict[str, Any]]         # 算力与 Token 消耗追踪指标 (Prompt/Completion/Cost)
     logs: Annotated[List[str], operator.add]  # 实时运行日志流水

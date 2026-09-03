@@ -8,9 +8,10 @@ import { FollowUpDrawer } from './components/FollowUpDrawer';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import { ExportModal } from './components/ExportModal';
 import { MindmapModal } from './components/MindmapModal';
+import { ModelSettingsModal, getStoredCustomLLMConfig } from './components/ModelSettingsModal';
 import { ThemeType } from './components/ThemeSelector';
 import { Language } from './locales/translations';
-import { ChapterOutline, CitationSource, TaskStatus } from './types';
+import { ChapterOutline, CitationSource, TaskStatus, ReportStyle, CustomLLMConfig } from './types';
 import { createTask, approveOutline, cancelTask, subscribeToTaskStream } from './lib/api';
 
 const VALID_THEMES: ThemeType[] = ['vintage', 'light', 'emerald', 'dark'];
@@ -50,6 +51,8 @@ export const App: React.FC = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isMindmapOpen, setIsMindmapOpen] = useState(false);
+  const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
+  const [customLLMConfig, setCustomLLMConfig] = useState<CustomLLMConfig | null>(getStoredCustomLLMConfig);
   const [deepDiveQuestion, setDeepDiveQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -75,11 +78,11 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // 1. 发起调研任务 (支持本地文档混合 RAG)
+  // 1. 发起调研任务 (支持本地文档混合 RAG 与自定义模型网关)
   const handleStartResearch = async (
     userQuery: string,
     depth: 'quick' | 'standard' | 'deep',
-    style: 'consulting' | 'academic' | 'executive',
+    style: ReportStyle,
     localDocs?: any[]
   ) => {
     // 若已有正在运行的任务，先行取消后台 (Bug 15)
@@ -97,7 +100,15 @@ export const App: React.FC = () => {
     setMaxIterations(maxIter);
 
     try {
-      const res = await createTask(userQuery, depth, style, false, maxIter, localDocs);
+      const res = await createTask(
+        userQuery, 
+        depth, 
+        style, 
+        false, 
+        maxIter, 
+        localDocs, 
+        customLLMConfig || undefined
+      );
       const tid = res.task_id;
       setTaskId(tid);
 
@@ -296,11 +307,13 @@ export const App: React.FC = () => {
         style={{ backgroundColor: 'var(--glow-2)' }}
       />
 
-      {/* 顶部导航栏 (含历史研报库、语言切换与主题切换) */}
+      {/* 顶部导航栏 (含历史研报库、语言切换、主题切换与自定义模型配置) */}
       <Navbar
         currentStep={currentStep}
         onReset={handleReset}
         onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenModelSettings={() => setIsModelSettingsOpen(true)}
+        hasCustomModel={!!(customLLMConfig?.api_key || customLLMConfig?.base_url || customLLMConfig?.model_name)}
         currentTheme={theme}
         onThemeChange={setTheme}
         currentLang={lang}
@@ -348,6 +361,7 @@ export const App: React.FC = () => {
             currentStep="research"
             iterationCount={iterationCount}
             maxIterations={maxIterations}
+            taskId={taskId || undefined}
             currentLang={lang}
           />
         )}
@@ -357,6 +371,7 @@ export const App: React.FC = () => {
             report={finalReport}
             citations={citations}
             outline={outline}
+            taskId={taskId || undefined}
             onOpenQA={(q) => {
               if (q) setDeepDiveQuestion(q);
               setIsQAOpen(true);
@@ -365,6 +380,7 @@ export const App: React.FC = () => {
             onOpenMindmap={() => setIsMindmapOpen(true)}
             onDeepDive={handleDeepDive}
             currentLang={lang}
+            currentTheme={theme}
           />
         )}
       </main>
@@ -398,6 +414,7 @@ export const App: React.FC = () => {
         report={finalReport}
         topic={query}
         outline={outline}
+        taskId={taskId || undefined}
         currentLang={lang}
       />
 
@@ -409,6 +426,14 @@ export const App: React.FC = () => {
         outline={outline}
         topic={query}
         currentLang={lang}
+      />
+
+      {/* 自定义模型网关配置弹窗 */}
+      <ModelSettingsModal
+        isOpen={isModelSettingsOpen}
+        onClose={() => setIsModelSettingsOpen(false)}
+        currentLang={lang}
+        onConfigSaved={(cfg) => setCustomLLMConfig(cfg)}
       />
 
     </div>

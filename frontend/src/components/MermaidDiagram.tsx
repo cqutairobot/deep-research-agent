@@ -13,6 +13,7 @@ import {
   X,
   Move
 } from 'lucide-react';
+import { copyToClipboard } from '../lib/utils';
 
 interface MermaidDiagramProps {
   code: string;
@@ -22,8 +23,8 @@ interface MermaidDiagramProps {
 export const cleanAndFormatMermaidCode = (rawCode: string): string => {
   let clean = rawCode.trim();
   
-  // 1. 移除首尾可能存在的三反引号及单反引号
-  clean = clean.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();
+  // 1. 移除首尾可能存在的三反引号及单反引号 (支持可选语言标记与尾部空白)
+  clean = clean.replace(/^```[a-zA-Z0-9_\-:]*\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
   clean = clean.replace(/^`+|`+$/g, '').trim();
 
   // 2. 全角中文箭头标准化为 ASCII 合法箭头（修复 --＞、==＞、-.-> 等输入法或误转换导致的所有语法错误）
@@ -33,45 +34,83 @@ export const cleanAndFormatMermaidCode = (rawCode: string): string => {
   clean = clean.replace(/＜--+/g, '<--');
   clean = clean.replace(/＜==+/g, '<==');
 
-  // 3. 检查是否包含标准 Mermaid 图表声明头
-  const hasHeader = /^(graph\s+[A-Za-z]+|flowchart\s+[A-Za-z]+|sequenceDiagram|gantt|classDiagram|stateDiagram|pie|erDiagram|journey|mindmap|quadrantChart)/i.test(clean);
+  // 3. 处理首行裸 graph 或 flowchart 无方向的情况 (补全默认 TD 纵向流)
+  clean = clean.replace(/^(graph|flowchart)\s*$/im, '$1 TD');
+
+  // 4. 检查是否包含标准 Mermaid 图表声明头 (跳过顶部空行与 %% 注释行，杜绝重复注入头导致的语法崩溃)
+  const firstEffectiveLine = clean.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('%%')) || '';
+  const hasHeader = /^(graph\s+[A-Za-z]+|flowchart\s+[A-Za-z]+|sequenceDiagram|gantt|classDiagram|stateDiagram|pie|erDiagram|journey|mindmap|quadrantChart|gitGraph)/i.test(firstEffectiveLine);
   if (!hasHeader) {
-    if (clean.includes('subgraph') || clean.includes('-->') || clean.includes('---')) {
+    if (clean.includes('subgraph') || clean.includes('-->') || clean.includes('---') || clean.includes('==>') || clean.includes('-.->')) {
       clean = 'graph TD\n' + clean;
     }
   }
 
-  // 4. 修复同一行挤压的语句（仅匹配行内水平空格，彻底杜绝死循环）
+  // 5. 修复同一行挤压的语句（仅匹配行内水平空格，彻底杜绝死循环）
   clean = clean.replace(/(\bend\b)[ \t]+(subgraph\b)/gi, '$1\n$2');
-  clean = clean.replace(/(\])[ \t]+([A-Za-z0-9_]+\[)/g, '$1\n    $2');
-  clean = clean.replace(/(\bend\b)[ \t]+([A-Za-z0-9_]+\s*-->)/gi, '$1\n    $2');
-  clean = clean.replace(/(\b[A-Za-z0-9_]+\s*-->\s*[^ \t\r\n]+)[ \t]+(?=[A-Za-z0-9_]+\s*-->)/g, '$1\n    ');
+  clean = clean.replace(/(\])[ \t]+([A-Za-z0-9_\u4e00-\u9fa5]+\s*\[)/g, '$1\n    $2');
+  clean = clean.replace(/(\bend\b)[ \t]+([A-Za-z0-9_\u4e00-\u9fa5]+\s*-->)/gi, '$1\n    $2');
+  clean = clean.replace(/(\b[A-Za-z0-9_\u4e00-\u9fa5]+\s*-->\s*[^ \t\r\n]+)[ \t]+(?=[A-Za-z0-9_\u4e00-\u9fa5]+\s*-->)/g, '$1\n    ');
 
-  // 5. 仅在非箭头情况下，将裸 < 与 > 转换为安全字符（注意：绝不误伤 --> 或 ==>）
-  clean = clean.replace(/<(?!--|==|[a-zA-Z\/])/g, '＜');
-  clean = clean.replace(/(?<![-=.a-zA-Z])>/g, '＞');
+  // 6. 将数字带点的非法节点 ID (如 1.1 --> 1.2) 转为合法的 node_1_1 --> node_1_2
+  clean = clean.replace(/\b(\d+)\.(\d+)\b(?=\s*(\[|\-\-|\=\=|\-\.|-->))/g, 'node_$1_$2');
+  clean = clean.replace(/(?<=\-\->|\=\=>|\-\.\->)\s*(\d+)\.(\d+)\b/g, ' node_$1_$2');
 
-  // 6. 逐行修复：截断标签、未闭合括号、末尾非代码文本清洗
+  // 7. 自动为包含未加引号的括号、斜杠、冒号、逗号等特殊字符的节点文字添加双引号安全包裹 (解决 Mermaid 词法解析器对圆括号报 SQE 错误)
+  clean = clean.replace(/([A-Za-z0-9_\u4e00-\u9fa5]+)\s*\[([^"\]\n]*[\(\)\/&+:，。；！!][^"\]\n]*)\]/g, '$1["$2"]');
+
+  // 8. 逐行修复：截断标签、未闭合引号、未闭合括号、末尾非代码文本清洗
   const lines = clean.split('\n');
   const fixedLines = lines.map(line => {
     let l = line.trimEnd();
+    
+    // 如果行末以未闭合的 <br 或 <br/ 截断，先将其剔除
     if (l.endsWith('<br') || l.endsWith('<br/')) {
       l = l.slice(0, l.lastIndexOf('<br'));
     }
     
     // 如果行末节点后紧跟附带的提示语/用户提问 (如 "H --> J你确定你改好了吗")，剥离非代码后缀
-    l = l.replace(/(-->|==>|-\.->)\s*([A-Za-z0-9_]+)([\u4e00-\u9fa5\uff00-\uffef\s]+.*)$/, '$1 $2');
+    l = l.replace(/(-->|==>|-\.->)\s*([A-Za-z0-9_\u4e00-\u9fa5]+|"[^"]+")([\u4e00-\u9fa5\uff00-\uffef\s]{4,}.*)$/, '$1 $2');
 
+    const quotes = (l.match(/"/g) || []).length;
     const openBrackets = (l.match(/\[/g) || []).length;
     const closeBrackets = (l.match(/\]/g) || []).length;
-    if (openBrackets > closeBrackets) {
-      return l + ']'.repeat(openBrackets - closeBrackets);
+
+    // 智能闭合截断的引号与括号 (例如遇到 DIM4 --> A3["知识编辑 自动补全为 DIM4 --> A3["知识编辑"])
+    if (quotes % 2 !== 0 && openBrackets > closeBrackets) {
+      l = l + '"' + ']'.repeat(openBrackets - closeBrackets);
+    } else if (openBrackets > closeBrackets) {
+      l = l + ']'.repeat(openBrackets - closeBrackets);
+    } else if (quotes % 2 !== 0) {
+      l = l + '"';
     }
+
     return l;
   });
+
+  // 清除末尾可能悬空的孤立箭头行或注释行
+  while (fixedLines.length > 0) {
+    const last = fixedLines[fixedLines.length - 1].trim();
+    if (last === '' || /(-->|==>|-\.->|->>|-->>)\s*$/.test(last) || last === '%%') {
+      fixedLines.pop();
+    } else {
+      break;
+    }
+  }
+
   clean = fixedLines.join('\n');
 
-  // 7. 自动补全未闭合的 subgraph (避免漏写 end 导致语法报错)
+  // 9. 保护合法 HTML break 标签，避免后续被 < / > 替换规则破坏为非法标签 <br/＞
+  clean = clean.replace(/<br\s*\/?>/gi, '___MMD_BR___');
+
+  // 10. 仅在非箭头情况下，将裸 < 与 > 转换为安全字符（绝不误伤 --> 或 ==>）
+  clean = clean.replace(/<(?!--|==)/g, '＜');
+  clean = clean.replace(/(?<![-=.])>/g, '＞');
+
+  // 11. 还原合法 HTML break 标签
+  clean = clean.replace(/___MMD_BR___/g, '<br/>');
+
+  // 12. 自动补全未闭合的 subgraph (避免漏写 end 导致语法报错)
   const subgraphMatches = clean.match(/\bsubgraph\b/g) || [];
   const endMatches = clean.match(/\bend\b/g) || [];
   if (subgraphMatches.length > endMatches.length) {
@@ -171,13 +210,14 @@ export const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ code, theme = 'd
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFullscreen]);
 
-  const handleCopy = (e?: React.MouseEvent) => {
+  const handleCopy = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
     const formattedCode = cleanAndFormatMermaidCode(code);
-    navigator.clipboard.writeText(formattedCode).then(() => {
+    const success = await copyToClipboard(formattedCode);
+    if (success) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }
   };
 
   const handleDownloadSvg = (e?: React.MouseEvent) => {

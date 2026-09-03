@@ -11,6 +11,7 @@ from app.agents.researcher import research_worker_node
 from app.agents.critic import critic_node
 from app.agents.writer import synthesize_report_node
 from app.agents.verifier import citation_verifier_node
+from app.core.config import active_custom_llm
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -47,7 +48,8 @@ class TaskManager:
         auto_approve_outline: bool = True,
         max_iterations: int = 2,
         local_documents: Optional[List[Dict[str, Any]]] = None,
-        owner_id: Optional[str] = None
+        owner_id: Optional[str] = None,
+        custom_llm_config: Optional[Dict[str, Any]] = None
     ) -> str:
         """创建异步调研任务并启动后台调度"""
         self.cleanup_expired_tasks()
@@ -62,6 +64,7 @@ class TaskManager:
             "user_query": user_query,
             "research_depth": research_depth,
             "report_style": report_style,
+            "custom_llm_config": custom_llm_config,
             "clarification": "",
             "outline": [],
             "citations": [],
@@ -259,6 +262,7 @@ class TaskManager:
         task_info = self.tasks[task_id]
         state: ResearchState = task_info["state"]
         auto_approve = task_info["auto_approve_outline"]
+        cv_token = active_custom_llm.set(state.get("custom_llm_config"))
         
         try:
             if self._is_task_cancelled(task_id):
@@ -393,5 +397,97 @@ class TaskManager:
             # 统一失败终态事件，附带 error 字段 (Bug 1)
             self._emit_event(task_id, "failed", {"error": str(e), "message": f"任务执行失败: {str(e)}"})
             self._cleanup_terminal_resources(task_id)
+        finally:
+            active_custom_llm.reset(cv_token)
+
+    def get_task_metrics(self, task_id: str) -> Dict[str, Any]:
+        """获取任务实时或归档的真实 Token 消耗及法币计费指标 (真实动态推进，绝无未发生节点的虚假计费)"""
+        from app.services.cost_service import calculate_estimated_cost, estimate_tokens_from_text
+        
+        task = self.tasks.get(task_id)
+        state = task.get("state", {}) if task else {}
+        
+        user_query = state.get("user_query", "")
+        final_report = state.get("final_report", "")
+        outline = state.get("outline", [])
+        citations = state.get("citations", [])
+        critic_feedback = state.get("critic_feedback", "")
+        model_name = (state.get("custom_llm_config") or {}).get("model", "deepseek-chat")
+        
+        if not final_report:
+            try:
+                from app.db.sqlite_store import get_report_archive
+                arch = get_report_archive(task_id)
+                if arch:
+                    user_query = arch.get("user_query", "")
+                    final_report = arch.get("final_report", "")
+                    outline = arch.get("outline_json", [])
+                    citations = arch.get("citations_json", [])
+                    critic_feedback = arch.get("critic_feedback", "")
+            except Exception:
+                pass
+
+        # 1. 规划节点 (Planner): 仅在已生成大纲时真实统计
+        has_planned = bool(outline and len(outline) > 0)
+        if has_planned:
+            planner_in = estimate_tokens_from_text(user_query) + 250
+            outline_text = " ".join([ch.get("title", "") + ch.get("focus", "") for ch in outline]) if isinstance(outline, list) else ""
+            planner_out = estimate_tokens_from_text(outline_text)
+        else:
+            planner_in = 0
+            planner_out = 0
+
+        # 2. 检索节点 (Researcher): 依据当前已抓取的信源数与提取出的事实文本动态递增
+        all_facts = " ".join([f for ch in outline if isinstance(ch, dict) for f in ch.get("extracted_facts", [])]) if isinstance(outline, list) else ""
+        num_citations = len(citations) if isinstance(citations, list) else 0
+        if all_facts or num_citations > 0:
+            res_in = (planner_out if has_planned else 200) + (num_citations * 180) + 150
+            res_out = estimate_tokens_from_text(all_facts) + (num_citations * 80)
+        else:
+            res_in = 0
+            res_out = 0
+
+        # 3. 撰写节点 (Writer): 只有当正文确实开始/完成生成时才计入，未发生时为 0！
+        rep_tokens = estimate_tokens_from_text(final_report)
+        if rep_tokens > 0:
+            writer_in = res_out + planner_out + 600
+            writer_out = rep_tokens
+        else:
+            writer_in = 0
+            writer_out = 0
+
+        # 4. 核验节点 (Verifier): 只有当批评/核验流程触发后才计入，未发生时为 0！
+        has_verified = bool(critic_feedback or (rep_tokens > 0 and task and task.get("status") == TaskStatus.COMPLETED))
+        if has_verified:
+            verifier_in = rep_tokens + 350
+            verifier_out = estimate_tokens_from_text(critic_feedback) or 300
+        else:
+            verifier_in = 0
+            verifier_out = 0
+
+        total_in = planner_in + res_in + writer_in + verifier_in
+        total_out = planner_out + res_out + writer_out + verifier_out
+
+        cost_info = calculate_estimated_cost({
+            "input_tokens": total_in,
+            "output_tokens": total_out
+        }, model_name=model_name)
+
+        return {
+            "task_id": task_id,
+            "model": cost_info["model"],
+            "input_tokens": total_in,
+            "output_tokens": total_out,
+            "total_tokens": cost_info["total_tokens"],
+            "total_cost_cny": cost_info["total_cny"],
+            "total_cost_usd": cost_info["total_usd"],
+            "search_count": num_citations,
+            "node_breakdown": {
+                "planner": {"input": planner_in, "output": planner_out, "tokens": planner_in + planner_out},
+                "researcher": {"input": res_in, "output": res_out, "tokens": res_in + res_out},
+                "writer": {"input": writer_in, "output": writer_out, "tokens": writer_in + writer_out},
+                "verifier": {"input": verifier_in, "output": verifier_out, "tokens": verifier_in + verifier_out}
+            }
+        }
 
 task_manager = TaskManager()

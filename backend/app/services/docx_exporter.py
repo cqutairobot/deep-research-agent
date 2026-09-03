@@ -206,10 +206,30 @@ def add_styled_markdown_text(paragraph, text: str, default_size: float = 10.5, d
             set_run_font(run, size_pt=default_size, color_rgb=default_color)
 
 
-def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[str, Any]] = None) -> io.BytesIO:
+def generate_editorial_docx(
+    report_md: str,
+    title: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    style: str = "consulting"
+) -> io.BytesIO:
     """
-    将深度研究报告 Markdown 转换为具有投行/智库出版级排版质感的 Microsoft Word (.docx) 文档。
+    将深度研究报告 Markdown 转换为具有顶级出版级排版质感的 Microsoft Word (.docx) 文档。
+    支持依据 5 大专业研报风格自适应专属主题配色与元数据。
     """
+    from app.agents.writer import StyleProfileRegistry
+    
+    chosen_style = style or (metadata.get("style") if metadata else None) or "consulting"
+    profile = StyleProfileRegistry.get(chosen_style)
+    primary_hex = profile.get("docx_primary_color", COLOR_PRIMARY_HEX)
+    try:
+        r_val = int(primary_hex[0:2], 16)
+        g_val = int(primary_hex[2:4], 16)
+        b_val = int(primary_hex[4:6], 16)
+        theme_rgb_primary = RGBColor(r_val, g_val, b_val)
+    except Exception:
+        theme_rgb_primary = RGB_PRIMARY
+        primary_hex = COLOR_PRIMARY_HEX
+
     doc = Document()
 
     # 1. 页面设置：标准 A4 (210mm x 297mm), 上下 2.54cm, 左右 2.8cm
@@ -225,7 +245,7 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
     header = section.header
     header_p = header.paragraphs[0]
     header_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    header_run = header_p.add_run("Deep Research Agent 2.0 · 深度产业智库研究报告")
+    header_run = header_p.add_run(f"Deep Research Agent 2.5 · {profile['name_zh']}")
     set_run_font(header_run, size_pt=8.5, color_rgb=RGB_MUTED)
 
     footer = section.footer
@@ -236,7 +256,7 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
 
     # 3. 统计信源与图表数量 (用于封面元数据卡片)
     citation_count = len(re.findall(r'\[\d+\]\s+\[.*?\]\(.*?\)', report_md)) or len(re.findall(r'\[\d+\]', report_md)) // 2
-    mermaid_count = len(re.findall(r'```mermaid', report_md))
+    mermaid_count = len(re.findall(r'```(?:mermaid|flowchart|sequenceDiagram|gantt|mindmap|graph)', report_md, re.IGNORECASE))
 
     # -------------------------------------------------------------
     # 4. 出版级封面卡片 (Cover Page)
@@ -244,8 +264,8 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
     badge_p = doc.add_paragraph()
     badge_p.paragraph_format.space_before = Pt(36)
     badge_p.paragraph_format.space_after = Pt(12)
-    badge_run = badge_p.add_run("【深度产业智库权威研究报告】")
-    set_run_font(badge_run, size_pt=11, bold=True, color_rgb=RGB_ACCENT)
+    badge_run = badge_p.add_run(f"【{profile['name_zh']}权威深度报告】")
+    set_run_font(badge_run, size_pt=11, bold=True, color_rgb=theme_rgb_primary)
 
     clean_main_title = title or "深度产业研究与商业化前景推演报告"
     title_p = doc.add_paragraph()
@@ -253,7 +273,7 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
     title_p.paragraph_format.space_after = Pt(14)
     title_p.paragraph_format.line_spacing = 1.25
     title_run = title_p.add_run(clean_main_title)
-    set_run_font(title_run, size_pt=24, bold=True, color_rgb=RGB_PRIMARY)
+    set_run_font(title_run, size_pt=24, bold=True, color_rgb=theme_rgb_primary)
 
     sub_p = doc.add_paragraph()
     sub_p.paragraph_format.space_after = Pt(24)
@@ -262,18 +282,18 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
 
     div_p = doc.add_paragraph()
     div_p.paragraph_format.space_after = Pt(32)
-    set_paragraph_shading(div_p, COLOR_PRIMARY_HEX)
+    set_paragraph_shading(div_p, primary_hex)
     div_run = div_p.add_run(" ")
     div_run.font.size = Pt(2)
 
     curr_date_str = time.strftime("%Y年%m月%d日", time.localtime())
     meta_rows = [
         ("调研课题领域", clean_main_title[:45] + ("..." if len(clean_main_title) > 45 else "")),
-        ("研报编制机构", "Deep Research Autonomous Agent 2.0 (DeepSeek Engine)"),
+        ("研报编制机构", "Deep Research Autonomous Agent 2.5 (Multi-Model Gateway)"),
         ("完成发布时间", curr_date_str),
         ("权威数据源统计", f"收录 {citation_count} 处可信行业信源 · 100% 真实交叉验证"),
         ("产业可视化架构", f"内嵌 {mermaid_count} 套技术演进与产业链路图谱"),
-        ("报告专业风格", "顶级投行商业咨询与产业研判 (Executive Strategy)")
+        ("报告专业风格", f"{profile['name_zh']} ({profile['name_en']})")
     ]
 
     meta_table = doc.add_table(rows=len(meta_rows), cols=2)
@@ -317,7 +337,6 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
         # A. 代码块与 Mermaid 图表处理 (``` ... ```)
         # 增加容错：如遇到行首标题 (# 开头)，说明上一段代码未闭合，立即提前截断
         if trimmed.startswith('```'):
-            is_mermaid = 'mermaid' in trimmed.lower()
             code_lines = []
             i += 1
             while i < len(lines):
@@ -335,6 +354,11 @@ def generate_editorial_docx(report_md: str, title: str, metadata: Optional[Dict[
             code_text = "\n".join(code_lines).strip()
             if not code_text:
                 continue
+
+            is_mermaid = 'mermaid' in trimmed.lower() or any(
+                re.match(r'^(graph|flowchart|subgraph|sequenceDiagram|gantt|mindmap|classDiagram)\b', cl.strip())
+                for cl in code_lines
+            )
 
             if is_mermaid:
                 card_table = doc.add_table(rows=2, cols=1)

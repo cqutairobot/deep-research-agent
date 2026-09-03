@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
-import { X, FileText, Download, Printer, Network, FileCode } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, FileText, Download, Printer, Network, FileCode, Presentation, Copy, Check, Loader2, Sparkles, MonitorPlay, ExternalLink, FileImage } from 'lucide-react';
 import { ChapterOutline } from '../types';
 import { Language, translations } from '../locales/translations';
-import { downloadBlob, escapeHtml } from '../lib/utils';
+import { downloadBlob, escapeHtml, copyToClipboard } from '../lib/utils';
+import { 
+  fetchMarpSlides, 
+  previewMarpSlides, 
+  downloadMarpFile, 
+  downloadPptxFile, 
+  downloadHtmlSlidesFile, 
+  getLivePresentationUrl 
+} from '../lib/api';
+import { PresentationModal } from './PresentationModal';
+import { InfographicCard } from './InfographicCard';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -10,6 +20,7 @@ interface ExportModalProps {
   report: string;
   topic: string;
   outline?: ChapterOutline[];
+  taskId?: string;
   currentLang?: Language;
 }
 
@@ -19,10 +30,107 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   report,
   topic,
   outline,
+  taskId,
   currentLang = 'zh'
 }) => {
   const t = translations[currentLang].export;
   const [downloadingDocx, setDownloadingDocx] = useState(false);
+  const [activeTab, setActiveTab] = useState<'standard' | 'marp'>('standard');
+  const [marpMarkdown, setMarpMarkdown] = useState<string>('');
+  const [marpPageCount, setMarpPageCount] = useState<number>(0);
+  const [isLoadingMarp, setIsLoadingMarp] = useState<boolean>(false);
+  const [copiedMarp, setCopiedMarp] = useState<boolean>(false);
+  const [downloadingMarp, setDownloadingMarp] = useState<boolean>(false);
+  const [downloadingPptx, setDownloadingPptx] = useState<boolean>(false);
+  const [downloadingHtml, setDownloadingHtml] = useState<boolean>(false);
+  const [isPresentationModalOpen, setIsPresentationModalOpen] = useState<boolean>(false);
+  const [isInfographicOpen, setIsInfographicOpen] = useState<boolean>(false);
+
+  // 自动预加载或按需加载 Marp 幻灯片
+  useEffect(() => {
+    if (!isOpen || (activeTab !== 'marp' && marpMarkdown)) return;
+    if (activeTab !== 'marp' && !isOpen) return;
+
+    let isMounted = true;
+    setIsLoadingMarp(true);
+
+    const loadMarp = async () => {
+      try {
+        if (taskId) {
+          const data = await fetchMarpSlides(taskId);
+          if (isMounted) {
+            setMarpMarkdown(data.marp_markdown);
+            setMarpPageCount(data.page_count);
+          }
+        } else {
+          const data = await previewMarpSlides(topic || '深度研究汇报', report);
+          if (isMounted) {
+            setMarpMarkdown(data.marp_markdown);
+            setMarpPageCount(data.page_count);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load Marp slides:', e);
+      } finally {
+        if (isMounted) setIsLoadingMarp(false);
+      }
+    };
+
+    if (activeTab === 'marp' || isOpen) {
+      loadMarp();
+    }
+    return () => { isMounted = false; };
+  }, [isOpen, activeTab, taskId, topic, report]);
+
+  const handleCopyMarp = async () => {
+    if (!marpMarkdown) return;
+    const ok = await copyToClipboard(marpMarkdown);
+    if (ok) {
+      setCopiedMarp(true);
+      setTimeout(() => setCopiedMarp(false), 2000);
+    }
+  };
+
+  const handleDownloadMarp = async () => {
+    setDownloadingMarp(true);
+    try {
+      await downloadMarpFile(topic || '深度研究汇报', report, taskId);
+    } catch (e) {
+      console.error('Download Marp failed:', e);
+    } finally {
+      setDownloadingMarp(false);
+    }
+  };
+
+  const handleDownloadPptx = async () => {
+    setDownloadingPptx(true);
+    try {
+      await downloadPptxFile(topic || '深度研究汇报', report, taskId);
+    } catch (e) {
+      console.error('Download PPTX failed:', e);
+    } finally {
+      setDownloadingPptx(false);
+    }
+  };
+
+  const handleDownloadHtmlSlides = async () => {
+    setDownloadingHtml(true);
+    try {
+      await downloadHtmlSlidesFile(topic || '深度研究汇报', report, taskId);
+    } catch (e) {
+      console.error('Download HTML slides failed:', e);
+    } finally {
+      setDownloadingHtml(false);
+    }
+  };
+
+  const handleOpenLivePresentation = () => {
+    if (taskId) {
+      setIsPresentationModalOpen(true);
+    } else {
+      downloadHtmlSlidesFile(topic || '深度研究汇报', report);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -157,7 +265,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       // A. 代码块与 Mermaid 图表处理
       if (trimmed.startsWith('```')) {
         if (inList) { htmlContent += '</ul>'; inList = false; }
-        const isMermaid = trimmed.toLowerCase().includes('mermaid');
         const codeLines: string[] = [];
         i++;
         while (i < lines.length) {
@@ -172,6 +279,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           codeLines.push(lines[i]);
           i++;
         }
+        const isMermaid = 
+          trimmed.toLowerCase().includes('mermaid') || 
+          codeLines.some(l => {
+            const lt = l.trim();
+            return lt.startsWith('graph ') || lt.startsWith('flowchart ') || lt.startsWith('subgraph') || lt.startsWith('sequenceDiagram') || lt.startsWith('gantt') || lt.startsWith('mindmap') || lt.startsWith('classDiagram');
+          });
         const codeText = escapeHtml(codeLines.join('\n'));
         if (isMermaid) {
           htmlContent += `
@@ -253,6 +366,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } else if (trimmed === '---') {
         if (inList) { htmlContent += '</ul>'; inList = false; }
         htmlContent += '<hr/>';
+      } else if (
+        trimmed.startsWith('graph ') ||
+        trimmed.startsWith('flowchart ') ||
+        trimmed.startsWith('subgraph') ||
+        trimmed.startsWith('sequenceDiagram') ||
+        trimmed.startsWith('gantt') ||
+        trimmed.startsWith('mindmap')
+      ) {
+        if (inList) { htmlContent += '</ul>'; inList = false; }
+        const mmdLines = [lines[i]];
+        i++;
+        while (i < lines.length && !lines[i].trim().startsWith('#') && (lines[i].trim() !== '' || (i + 1 < lines.length && !lines[i + 1].trim().startsWith('#')))) {
+          mmdLines.push(lines[i]);
+          i++;
+        }
+        const codeText = escapeHtml(mmdLines.join('\n').trim());
+        htmlContent += `
+          <div class="diagram-card">
+            <div class="diagram-header">📐 技术架构与产业演进路线图谱 (Mermaid Architecture)</div>
+            <pre class="diagram-body"><code>${codeText}</code></pre>
+          </div>
+        `;
+        continue;
       } else {
         if (inList) { htmlContent += '</ul>'; inList = false; }
         htmlContent += `<p>${formatInline(trimmed)}</p>`;
@@ -564,88 +700,268 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </button>
         </div>
 
-        <div className="space-y-2.5">
-          {/* 1. Word (.docx) 导出 */}
+        {/* Tab 切换 */}
+        <div className="flex items-center gap-1 p-1 theme-nested rounded-2xl border border-subtle">
           <button
             type="button"
-            onClick={handleDownloadDocx}
-            disabled={downloadingDocx}
-            className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
+            onClick={() => setActiveTab('standard')}
+            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              activeTab === 'standard' ? 'theme-card shadow-sm font-bold theme-accent-text' : 'opacity-70 hover:opacity-100'
+            }`}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold group-hover:theme-accent-text transition">
-                  {downloadingDocx ? t.docxGenerating : t.docxTitle}
-                </div>
-                <div className="text-[11px] opacity-70">{t.docxDesc}</div>
-              </div>
-            </div>
-            <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+            <FileText className="w-3.5 h-3.5" />
+            <span>标准文档导出 (Word/MD/PDF)</span>
           </button>
-
-          {/* 2. Markdown 源码 */}
           <button
             type="button"
-            onClick={handleDownloadMarkdown}
-            className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
+            onClick={() => setActiveTab('marp')}
+            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+              activeTab === 'marp' ? 'theme-card shadow-sm font-bold text-blue-600 dark:text-blue-400' : 'opacity-70 hover:opacity-100'
+            }`}
           >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                <FileCode className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold group-hover:theme-accent-text transition">
-                  {t.mdTitle}
-                </div>
-                <div className="text-[11px] opacity-70">{t.mdDesc}</div>
-              </div>
-            </div>
-            <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
-          </button>
-
-          {/* 3. PDF / 打印 */}
-          <button
-            type="button"
-            onClick={handlePrintPDF}
-            className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
-                <Printer className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold group-hover:theme-accent-text transition">
-                  {t.pdfTitle}
-                </div>
-                <div className="text-[11px] opacity-70">{t.pdfDesc}</div>
-              </div>
-            </div>
-            <Printer className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
-          </button>
-
-          {/* 4. 下载思维导图 JSON 结构 */}
-          <button
-            type="button"
-            onClick={handleDownloadMindmapJson}
-            className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center">
-                <Network className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-xs font-semibold group-hover:theme-accent-text transition">
-                  {t.mindmapJsonTitle}
-                </div>
-                <div className="text-[11px] opacity-70">{t.mindmapJsonDesc}</div>
-              </div>
-            </div>
-            <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+            <Presentation className="w-3.5 h-3.5" />
+            <span>🖥️ Marp PPT 幻灯片</span>
           </button>
         </div>
+
+        {activeTab === 'standard' ? (
+          <div className="space-y-2.5">
+            {/* 1. Word (.docx) 导出 */}
+            <button
+              type="button"
+              onClick={handleDownloadDocx}
+              disabled={downloadingDocx}
+              className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold group-hover:theme-accent-text transition">
+                    {downloadingDocx ? t.docxGenerating : t.docxTitle}
+                  </div>
+                  <div className="text-[11px] opacity-70">{t.docxDesc}</div>
+                </div>
+              </div>
+              <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+            </button>
+
+            {/* 2. Markdown 源码 */}
+            <button
+              type="button"
+              onClick={handleDownloadMarkdown}
+              className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                  <FileCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold group-hover:theme-accent-text transition">
+                    {t.mdTitle}
+                  </div>
+                  <div className="text-[11px] opacity-70">{t.mdDesc}</div>
+                </div>
+              </div>
+              <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+            </button>
+
+            {/* 3. PDF / 打印 */}
+            <button
+              type="button"
+              onClick={handlePrintPDF}
+              className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                  <Printer className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold group-hover:theme-accent-text transition">
+                    {t.pdfTitle}
+                  </div>
+                  <div className="text-[11px] opacity-70">{t.pdfDesc}</div>
+                </div>
+              </div>
+              <Printer className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+            </button>
+
+            {/* 4. 下载思维导图 JSON 结构 */}
+            <button
+              type="button"
+              onClick={handleDownloadMindmapJson}
+              className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center">
+                  <Network className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold group-hover:theme-accent-text transition">
+                    {t.mindmapJsonTitle}
+                  </div>
+                  <div className="text-[11px] opacity-70">{t.mindmapJsonDesc}</div>
+                </div>
+              </div>
+              <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+            </button>
+
+            {/* 5. 快捷跳转 Marp 幻灯片 */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('marp')}
+              className="w-full theme-card p-3.5 rounded-xl flex items-center justify-between text-left transition group cursor-pointer border border-blue-500/20 hover:border-blue-500/50"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <Presentation className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-semibold group-hover:theme-accent-text transition flex items-center gap-1.5">
+                    <span>{t.marpTitle}</span>
+                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-500/15 text-blue-600 font-bold">New</span>
+                  </div>
+                  <div className="text-[11px] opacity-70">{t.marpDesc}</div>
+                </div>
+              </div>
+              <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition text-blue-500" />
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3 animate-in fade-in">
+            {/* 🚀 核心端到端：立即全屏在线演示 */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 text-white shadow-lg flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-extrabold flex items-center gap-1.5">
+                  <MonitorPlay className="w-4 h-4 text-cyan-300" />
+                  <span>无需第三方软件 · 立即在线全屏放映</span>
+                </div>
+                <div className="text-xs text-blue-100 mt-1 opacity-90">
+                  一键在浏览器打开 16:9 交互式大屏幻灯片，支持方向键/触控/全屏放映
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenLivePresentation}
+                className="px-4 py-2 bg-white text-blue-700 hover:bg-blue-50 text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 shrink-0 transition cursor-pointer hover:scale-105 active:scale-95"
+              >
+                <span>全屏放映</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* 3 大原生格式一键下载 */}
+            <div className="space-y-2">
+              {/* 0. 社交高光快报长图 */}
+              <button
+                type="button"
+                onClick={() => setIsInfographicOpen(true)}
+                className="w-full theme-card p-3 rounded-xl flex items-center justify-between text-left transition group cursor-pointer border border-subtle hover:border-cyan-500/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                    <FileImage className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold group-hover:text-cyan-500 transition flex items-center gap-1.5">
+                      <span>生成社交高光快报长图 (2x 超清 PNG)</span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/15 text-cyan-600 font-bold">朋友圈/X</span>
+                    </div>
+                    <div className="text-[11px] opacity-70">
+                      包含三大量化指标、机理架构图、核心战略卡片与信源防伪证书
+                    </div>
+                  </div>
+                </div>
+                <ExternalLink className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />
+              </button>
+
+              {/* 1. 原生 PPTX 导出 */}
+              <button
+                type="button"
+                onClick={handleDownloadPptx}
+                disabled={downloadingPptx}
+                className="w-full theme-card p-3 rounded-xl flex items-center justify-between text-left transition group cursor-pointer border border-subtle hover:border-blue-500/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+                    <Presentation className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold group-hover:theme-accent-text transition flex items-center gap-1.5">
+                      <span>下载原生 PowerPoint 演示文稿 (.pptx)</span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-orange-500/15 text-orange-600 font-bold">免转换</span>
+                    </div>
+                    <div className="text-[11px] opacity-70">
+                      python-pptx 自动排版，支持 Office / WPS / Keynote 离线放映与编辑
+                    </div>
+                  </div>
+                </div>
+                {downloadingPptx ? <Loader2 className="w-4 h-4 animate-spin text-orange-500" /> : <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />}
+              </button>
+
+              {/* 2. 独立单文件 HTML 演示文稿下载 */}
+              <button
+                type="button"
+                onClick={handleDownloadHtmlSlides}
+                disabled={downloadingHtml}
+                className="w-full theme-card p-3 rounded-xl flex items-center justify-between text-left transition group cursor-pointer border border-subtle hover:border-blue-500/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                    <MonitorPlay className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold group-hover:theme-accent-text transition flex items-center gap-1.5">
+                      <span>下载独立 HTML 交互式幻灯片 (.html)</span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/15 text-cyan-600 font-bold">单文件</span>
+                    </div>
+                    <div className="text-[11px] opacity-70">
+                      零外部依赖，任何电脑/手机双击即演示，支持快捷键与离线脱机
+                    </div>
+                  </div>
+                </div>
+                {downloadingHtml ? <Loader2 className="w-4 h-4 animate-spin text-cyan-500" /> : <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />}
+              </button>
+
+              {/* 3. Marp Markdown (.md) 源码 */}
+              <button
+                type="button"
+                onClick={handleDownloadMarp}
+                disabled={downloadingMarp}
+                className="w-full theme-card p-3 rounded-xl flex items-center justify-between text-left transition group cursor-pointer border border-subtle hover:border-blue-500/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <FileCode className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold group-hover:theme-accent-text transition flex items-center gap-1.5">
+                      <span>下载 Marp 分页源码 (.md)</span>
+                    </div>
+                    <div className="text-[11px] opacity-70">
+                      标准 Gaia 主题语法，适配 VS Code Marp 插件二次编辑
+                    </div>
+                  </div>
+                </div>
+                {downloadingMarp ? <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> : <Download className="w-4 h-4 opacity-50 group-hover:opacity-100 transition" />}
+              </button>
+            </div>
+
+            {/* 源码预览与复制 */}
+            <div className="pt-1 flex items-center justify-between text-xs opacity-80">
+              <span className="font-mono text-[11px]">{marpPageCount > 0 ? `共提炼 ${marpPageCount} 页幻灯片` : '已提炼标准 16:9 大纲'}</span>
+              <button
+                type="button"
+                onClick={handleCopyMarp}
+                className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                {copiedMarp ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedMarp ? '已复制源码' : '复制 Marp 源码'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="pt-1 text-center">
           <button
@@ -658,6 +974,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
       </div>
+
+      {/* AI 演示文稿智能编排与动画弹窗 */}
+      <PresentationModal
+        isOpen={isPresentationModalOpen}
+        onClose={() => setIsPresentationModalOpen(false)}
+        taskId={taskId || ''}
+        reportTitle={topic || '深度研究汇报'}
+      />
+
+      {/* 社交高光快报长图卡片 */}
+      <InfographicCard
+        isOpen={isInfographicOpen}
+        onClose={() => setIsInfographicOpen(false)}
+        title={topic || '深度研究汇报'}
+        report={report}
+        taskId={taskId}
+      />
     </div>
   );
 };

@@ -11,16 +11,18 @@ import {
   Upload, 
   FileUp, 
   X, 
-  CheckCircle2 
+  CheckCircle2,
+  RefreshCw 
 } from 'lucide-react';
-import { uploadDocument } from '../lib/api';
+import { uploadDocument, fetchRecommendedTopics, RecommendedTopic } from '../lib/api';
 import { Language, translations } from '../locales/translations';
+import { ReportStyle } from '../types';
 
 interface CommandHeroProps {
   onSubmit: (
     query: string, 
     depth: 'quick' | 'standard' | 'deep', 
-    style: 'consulting' | 'academic' | 'executive',
+    style: ReportStyle,
     localDocs?: any[]
   ) => void;
   isLoading: boolean;
@@ -35,12 +37,40 @@ export const CommandHero: React.FC<CommandHeroProps> = ({
   const t = translations[currentLang].hero;
   const [query, setQuery] = useState('');
   const [depth, setDepth] = useState<'quick' | 'standard' | 'deep'>('standard');
-  const [style, setStyle] = useState<'consulting' | 'academic' | 'executive'>('consulting');
+  const [style, setStyle] = useState<ReportStyle>('consulting');
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [presets, setPresets] = useState<RecommendedTopic[]>(t.presets);
+  const [isRefreshingPresets, setIsRefreshingPresets] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const presets = t.presets;
+  // 切换语言时重置
+  React.useEffect(() => {
+    setPresets(t.presets);
+  }, [currentLang]);
+
+  // 调用大模型或多元题库换一批推荐课题
+  const handleRefreshPresets = async () => {
+    if (isRefreshingPresets) return;
+    setIsRefreshingPresets(true);
+    try {
+      let customLLMCfg = null;
+      const savedConfig = localStorage.getItem('deep_research_custom_llm');
+      if (savedConfig) {
+        try {
+          customLLMCfg = JSON.parse(savedConfig);
+        } catch {}
+      }
+      const newTopics = await fetchRecommendedTopics(customLLMCfg, 4);
+      if (newTopics && newTopics.length > 0) {
+        setPresets(newTopics);
+      }
+    } catch (e) {
+      console.warn('刷新精选课题失败:', e);
+    } finally {
+      setIsRefreshingPresets(false);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -170,9 +200,21 @@ export const CommandHero: React.FC<CommandHeroProps> = ({
 
         {/* 灵感预设芯片 */}
         <div className="mb-6">
-          <div className="text-xs opacity-75 mb-2 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 theme-accent-text" />
-            <span>{t.presetsTitle}</span>
+          <div className="text-xs opacity-75 mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 theme-accent-text" />
+              <span>{t.presetsTitle}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleRefreshPresets}
+              disabled={isRefreshingPresets}
+              className="flex items-center gap-1 text-[11px] theme-accent-text hover:brightness-125 transition cursor-pointer disabled:opacity-50 select-none py-0.5 px-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5"
+              title="调用大模型或前沿题材库，动态换一批研究课题"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRefreshingPresets ? 'animate-spin text-cyan-400' : ''}`} />
+              <span>{isRefreshingPresets ? (currentLang === 'zh' ? 'AI 构思中...' : 'Generating...') : (currentLang === 'zh' ? '换一批' : 'Refresh')}</span>
+            </button>
           </div>
           <div className="flex flex-wrap gap-2">
             {presets.map((p, idx) => (
@@ -180,7 +222,8 @@ export const CommandHero: React.FC<CommandHeroProps> = ({
                 key={idx}
                 type="button"
                 onClick={() => setQuery(p.text)}
-                className="text-xs theme-card opacity-90 hover:opacity-100 px-3 py-1.5 rounded-lg transition shadow-sm cursor-pointer"
+                className="text-xs theme-card opacity-90 hover:opacity-100 px-3 py-1.5 rounded-lg transition shadow-sm cursor-pointer hover:border-cyan-500/50 hover:scale-[1.02] active:scale-[0.98]"
+                title={p.text}
               >
                 {p.title}
               </button>
@@ -237,33 +280,56 @@ export const CommandHero: React.FC<CommandHeroProps> = ({
               <FileText className="w-3.5 h-3.5 theme-accent-text" />
               <span>{t.styleLabel}</span>
             </label>
-            <div className="grid grid-cols-3 gap-1.5 theme-nested p-1 rounded-xl">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 theme-nested p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setStyle('consulting')}
-                className={`py-2 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                   style === 'consulting' ? 'theme-pill-active shadow-md' : 'opacity-70 hover:opacity-100'
                 }`}
               >
-                {t.styleConsulting}
+                <span className="font-medium">💼 {currentLang === 'zh' ? '商业咨询' : 'Consulting'}</span>
+                <span className="text-[10px] opacity-60 scale-90">MECE / 厂商对比</span>
               </button>
               <button
                 type="button"
-                onClick={() => setStyle('academic')}
-                className={`py-2 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  style === 'academic' ? 'theme-pill-active shadow-md' : 'opacity-70 hover:opacity-100'
+                onClick={() => setStyle('literature_review')}
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                  style === 'literature_review' || style === 'academic' ? 'theme-pill-active shadow-md' : 'opacity-70 hover:opacity-100'
                 }`}
               >
-                {t.styleAcademic}
+                <span className="font-medium">📑 {currentLang === 'zh' ? '学术综述' : 'Literature'}</span>
+                <span className="text-[10px] opacity-60 scale-90">分类学 / LaTeX</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStyle('tutorial_docs')}
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                  style === 'tutorial_docs' ? 'theme-pill-active shadow-md' : 'opacity-70 hover:opacity-100'
+                }`}
+              >
+                <span className="font-medium">🛠️ {currentLang === 'zh' ? '技术教程' : 'Cookbook'}</span>
+                <span className="text-[10px] opacity-60 scale-90">分步实操 / 代码</span>
               </button>
               <button
                 type="button"
                 onClick={() => setStyle('executive')}
-                className={`py-2 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                   style === 'executive' ? 'theme-pill-active shadow-md' : 'opacity-70 hover:opacity-100'
                 }`}
               >
-                {t.styleExecutive}
+                <span className="font-medium">🎯 {currentLang === 'zh' ? '高管内参' : 'Executive'}</span>
+                <span className="text-[10px] opacity-60 scale-90">BLUF / 一页纸</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStyle('briefing')}
+                className={`py-2 px-1 rounded-lg text-xs font-medium transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer col-span-2 sm:col-span-1 ${
+                  style === 'briefing' ? 'theme-pill-active shadow-md' : 'opacity-70 hover:opacity-100'
+                }`}
+              >
+                <span className="font-medium">⚡ {currentLang === 'zh' ? '前沿特稿' : 'Briefing'}</span>
+                <span className="text-[10px] opacity-60 scale-90">时间线 / 利益博弈</span>
               </button>
             </div>
           </div>

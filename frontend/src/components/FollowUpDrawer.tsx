@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, MessageSquare, Bot, User, Sparkles, Anchor, ShieldAlert, BarChart3, TrendingUp, FileText, Copy, Check } from 'lucide-react';
 import { CitationSource } from '../types';
 import { Language, translations } from '../locales/translations';
+import { copyToClipboard } from '../lib/utils';
 
 interface FollowUpDrawerProps {
   isOpen: boolean;
@@ -112,11 +113,12 @@ export const FollowUpDrawer: React.FC<FollowUpDrawerProps> = ({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleCopyMsg = (idx: number, text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+  const handleCopyMsg = async (idx: number, text: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
       setCopiedIdx(idx);
       setTimeout(() => setCopiedIdx(null), 2000);
-    });
+    }
   };
 
   useEffect(() => {

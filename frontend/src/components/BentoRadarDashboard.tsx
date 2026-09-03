@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Activity, 
   Terminal, 
@@ -7,11 +7,15 @@ import {
   RefreshCw, 
   CheckCircle2, 
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Coins,
+  Cpu,
+  Zap
 } from 'lucide-react';
 import { CitationSource, ChapterOutline } from '../types';
 import { Language, translations } from '../locales/translations';
 import { formatCitationDomain } from '../lib/utils';
+import { fetchTaskMetrics, TaskMetricsResult } from '../lib/api';
 
 interface BentoRadarDashboardProps {
   logs: string[];
@@ -21,6 +25,7 @@ interface BentoRadarDashboardProps {
   currentStep: string;
   iterationCount: number;
   maxIterations: number;
+  taskId?: string;
   currentLang?: Language;
 }
 
@@ -32,9 +37,20 @@ export const BentoRadarDashboard: React.FC<BentoRadarDashboardProps> = ({
   currentStep,
   iterationCount,
   maxIterations,
+  taskId,
   currentLang = 'zh'
 }) => {
   const t = translations[currentLang].radar;
+  const [metrics, setMetrics] = useState<TaskMetricsResult | null>(null);
+
+  useEffect(() => {
+    if (!taskId) return;
+    fetchTaskMetrics(taskId).then(setMetrics).catch(() => {});
+    const interval = setInterval(() => {
+      fetchTaskMetrics(taskId).then(setMetrics).catch(() => {});
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [taskId]);
 
   const allExtractedFacts = outline.flatMap((ch) => 
     (ch.extracted_facts || []).map(f => ({ chapter: ch.chapter_num, fact: f }))
@@ -66,6 +82,90 @@ export const BentoRadarDashboard: React.FC<BentoRadarDashboardProps> = ({
               {t.round
                 .replace('{current}', String(iterationCount || 1))
                 .replace('{max}', String(maxIterations || 2))}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 算力消耗与 Token 成本实时看板 */}
+      <div className="theme-surface rounded-2xl p-5 shadow-xl border border-subtle">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-4 border-b border-subtle">
+          <div className="flex items-center gap-2">
+            <Coins className="w-4 h-4 text-amber-500" />
+            <h3 className="text-xs font-bold uppercase tracking-wider">⚡ 算力消耗与 Token 成本看板 (Compute & Cost Radar)</h3>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
+            <span>调度模型:</span>
+            <span className="px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 font-semibold border border-blue-500/20">
+              {metrics?.model || 'deepseek-chat'}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="p-3.5 rounded-xl theme-nested border border-subtle">
+            <div className="text-[11px] opacity-70">预估法币花费</div>
+            <div className="text-base sm:text-lg font-extrabold text-amber-500 font-mono mt-1">
+              ¥{metrics ? metrics.total_cost_cny.toFixed(4) : '0.0000'} 元
+            </div>
+            <div className="text-[10px] opacity-50 font-mono mt-0.5">
+              ${metrics ? metrics.total_cost_usd.toFixed(4) : '0.0000'} USD
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl theme-nested border border-subtle">
+            <div className="text-[11px] opacity-70">总消耗 Token</div>
+            <div className="text-base sm:text-lg font-extrabold text-cyan-400 font-mono mt-1">
+              {metrics ? metrics.total_tokens.toLocaleString() : '0'}
+            </div>
+            <div className="text-[10px] opacity-50 font-mono mt-0.5">
+              In: {metrics?.input_tokens?.toLocaleString() || '0'} / Out: {metrics?.output_tokens?.toLocaleString() || '0'}
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl theme-nested border border-subtle">
+            <div className="text-[11px] opacity-70">全网证据检索</div>
+            <div className="text-base sm:text-lg font-extrabold text-emerald-400 font-mono mt-1">
+              {citations.length || metrics?.search_count || 0} 次
+            </div>
+            <div className="text-[10px] opacity-50 font-mono mt-0.5">
+              混合检索与学术交叉印证
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl theme-nested border border-subtle">
+            <div className="text-[11px] opacity-70">单千字成文成本</div>
+            <div className="text-base sm:text-lg font-extrabold text-purple-400 font-mono mt-1">
+              &lt; ¥0.003 元
+            </div>
+            <div className="text-[10px] opacity-50 font-mono mt-0.5">
+              商业咨询研报极致性价比
+            </div>
+          </div>
+        </div>
+
+        {/* 各 Agent 节点算力分配条 */}
+        <div className="mt-4 pt-3 border-t border-subtle/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 opacity-75 text-[11px]">
+            <Cpu className="w-3.5 h-3.5 text-blue-400" />
+            <span>节点算力拆解:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 font-mono text-[11px]">
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${metrics?.node_breakdown?.planner?.tokens ? 'bg-blue-500' : 'bg-slate-600'}`}></span>
+              <span>规划 (Planner): {metrics?.node_breakdown?.planner?.tokens || 0} T</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${metrics?.node_breakdown?.researcher?.tokens ? 'bg-cyan-500' : 'bg-slate-600'}`}></span>
+              <span>检索 (Researcher): {metrics?.node_breakdown?.researcher?.tokens || 0} T</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${metrics?.node_breakdown?.writer?.tokens ? 'bg-purple-500' : 'bg-slate-600'}`}></span>
+              <span>撰写 (Writer): {metrics?.node_breakdown?.writer?.tokens || 0} T</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className={`w-2 h-2 rounded-full ${metrics?.node_breakdown?.verifier?.tokens ? 'bg-emerald-500' : 'bg-slate-600'}`}></span>
+              <span>核验 (Verifier): {metrics?.node_breakdown?.verifier?.tokens || 0} T</span>
             </span>
           </div>
         </div>

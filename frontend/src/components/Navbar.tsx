@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, CheckCircle2, RotateCcw, Activity, FolderClock } from 'lucide-react';
+import { Sparkles, CheckCircle2, RotateCcw, Activity, FolderClock, Cpu } from 'lucide-react';
 import { ThemeSelector, ThemeType } from './ThemeSelector';
 import { LanguageSelector } from './LanguageSelector';
 import { Language, translations } from '../locales/translations';
@@ -8,6 +8,8 @@ interface NavbarProps {
   currentStep: number;
   onReset: () => void;
   onOpenHistory?: () => void;
+  onOpenModelSettings?: () => void;
+  hasCustomModel?: boolean;
   currentTheme: ThemeType;
   onThemeChange: (theme: ThemeType) => void;
   currentLang: Language;
@@ -20,6 +22,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentStep,
   onReset,
   onOpenHistory,
+  onOpenModelSettings,
+  hasCustomModel,
   currentTheme,
   onThemeChange,
   currentLang,
@@ -109,6 +113,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             onThemeChange={onThemeChange}
             currentLang={currentLang}
           />
+
+          {/* 自定义模型配置按钮 */}
+          {onOpenModelSettings && (
+            <button
+              type="button"
+              onClick={onOpenModelSettings}
+              title={currentLang === 'zh' ? '配置自定义大模型 (OpenAI/Claude)' : 'Configure Custom LLM'}
+              className="relative flex items-center gap-1.5 text-xs opacity-85 hover:opacity-100 px-3 py-2 rounded-xl border theme-card transition shadow-sm cursor-pointer min-h-[36px] sm:min-h-[auto]"
+            >
+              <Cpu className={`w-3.5 h-3.5 ${hasCustomModel ? 'text-blue-500' : 'theme-accent-text'}`} />
+              <span className="hidden sm:inline">{t.modelSettings || (currentLang === 'zh' ? '模型配置' : 'Model Gateway')}</span>
+              {hasCustomModel && (
+                <span className="w-2 h-2 rounded-full bg-blue-500 ring-2 ring-blue-500/20 animate-pulse" />
+              )}
+            </button>
+          )}
 
           {/* 历史研报库按钮 */}
           {onOpenHistory && (
